@@ -1,0 +1,10 @@
+name = "Umlaut"
+uuid = "92992a2b-8ce5-4a9c-bb9d-58be9a7dc841"
+authors = ["Andrei Zhabinski <faithlessfriend@gmail.com>"]
+version = "0.1.0"
+
+[deps]
+CodeInfoTools = "bc773b8a-8374-437a-b9f2-0e9785855863"
+Ghost = "4f8f7498-1303-42e1-920c-5033445536df"
+MacroTools = "1914dd2f-81c6-5fcd-8719-6d5c9610ff09"
+Mixtape = "17c23775-69b5-4366-8053-0c64bad4914c"
