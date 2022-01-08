@@ -39,6 +39,20 @@ function resolve_tape_vars(frame::Frame, sv_fargs...)
 end
 
 
+struct Fragment
+    ci::CodeInfo
+    from::Int
+    to::Int
+end
+
+
+struct IfSpec
+    cond::SSAValue
+    true_block::Fragment
+    false_block::Fragment
+end
+
+
 mutable struct Tracer
     tape::Tape
     frames::Vector{Frame}
@@ -61,6 +75,24 @@ function push_call!(tape::Tape, fn, args...; kwargs...)
     # op = tape.c.exec ? mkcall(fn, args...) : mkcall(fn, args...; val=nothing)
     op = mkcall(fn, args...)
     return push!(tape, op)
+end
+
+
+
+# TODO: imagine we have complete IfSpecs and LoopSpecs, so what? how are we going to use them?
+
+function detect_ifs(ci::CodeInfo)
+    ifs = []
+    for (i, st) in enumerate(ci.code)
+        if st isa Core.GotoIfNot
+            j = i + 1
+            while j < length(ci.code) && (ci.code[j] isa Core.GotoIfNot || ci.code[j] isa Core.ReturnNode)
+                j += 1
+            end
+            if_spec = IfSpec(st.cond, Fragment(ci, st.cond.id, j), nothing)
+        end
+    end
+
 end
 
 
@@ -113,9 +145,53 @@ linear(x, a, b) = mul(a, x) + b
 pow(x, n) = for i=1:n x = x * x end
 
 
+function cond1(x)
+    y = 2x
+    if x > 0
+        y = 3x
+    end
+    return y
+end
+
+
+function while1(x)
+    y = 2x
+    while y > 0
+        y -= 1
+    end
+    return y
+end
+
+
+function while_continue(x)
+    y = 3x
+    while y > 0
+        if y < x
+            continue
+        end
+        y -= 1
+    end
+    return y
+end
+
+
+function while_break(x)
+    y = 3x
+    while y > 0
+        if y < x
+            break
+        end
+        y -= 1
+    end
+    return y
+end
+
+
 function main()
     f = linear
     args = [1.0, 2.0, 3.0]
     trace(f, args...)
 
+
+    ci = @code_lowered cond1(2.0)
 end
