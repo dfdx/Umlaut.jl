@@ -32,7 +32,7 @@ function resolve_tape_vars(frame::Frame, sv_fargs...)
             push!(v_fargs, getfield(sv.mod, sv.name))
         else
             # treat as constant value
-            push!(v_fargs, v)
+            push!(v_fargs, sv)
         end
     end
     return v_fargs
@@ -55,7 +55,7 @@ end
 
 mutable struct Tracer
     tape::Tape
-    frames::Vector{Frame}
+    frames::Vector{Frame}  # TODO: remove, we don't need frames field here
     primitives   # TODO: make it more Ghost-like instead
 end
 
@@ -99,21 +99,61 @@ end
 
 function trace!(t::Tracer, ci::CodeInfo, v_fargs...)
     frame = Frame(ci, v_fargs...)
-    for (i, st) in enumerate(ci.code)
-        if Meta.isexpr(st, :call) || Meta.isexpr(st, :(=))
+    i = 1
+    while i <= length(ci.code)
+        st = ci.code[i]
+        @show i, st
+        if Meta.isexpr(st, :call) || (Meta.isexpr(st, :(=)) && Meta.isexpr(st.args[2], :call))
+            # function call
             sv = SSAValue(i)
             ex = Meta.isexpr(st, :(=)) ? st.args[2] : st
             vs = resolve_tape_vars(frame, ex.args...)
             fvals = [v isa V ? t.tape[v].val : v for v in vs]
-            if fvals[1] in t.primitives
-                v = push_call!(t.tape, vs...)
-                frame.ir2tape[sv] = v
+            v = if fvals[1] in t.primitives
+                try  # todo: turn into a macro
+                    push_call!(t.tape, vs...)
+                catch
+                    global STATE = (t, ci, v_fargs, frame, i, st)
+                    rethrow()
+                end
             else
-                v = trace!(t, code_lowered(fvals[1], fvals[2:end])[1], vs...)
-                frame.ir2tape[sv] = v
+                trace!(t, code_lowered(fvals[1], fvals[2:end])[1], vs...)
             end
+            frame.ir2tape[sv] = v
+            if Meta.isexpr(st, :(=))
+                # update mapping for slot
+                slot = st.args[1]
+                frame.ir2tape[slot] = v
+            end
+            i += 1
+        elseif Meta.isexpr(st, :(=))
+            # constant
+            sv = st.args[1]
+            v_rhs = resolve_tape_vars(frame, st.args[2])[1]
+            v = if v_rhs isa V
+                val = t.tape[v_rhs].val
+                push!(t.tape, Constant(val))
+            else
+                # there's no assignment operator, so we record a dummy call to identity
+                # would it be safe to simply update mapping ir2tape[sv] = v_rhs?
+                push_call!(t.tape, identity, v_rhs)
+            end
+            frame.ir2tape[sv] = v
+            i += 1
+        elseif st isa Core.GotoIfNot
+            # conditional jump
+            v_cond = frame.ir2tape[st.cond]
+            # if not cond, set i to destination, otherwise step forward
+            i = !t.tape[v_cond].val ? st.dest : i + 1
+        elseif st isa Core.GotoNode
+            # unconditional jump
+            i = st.label
+        elseif st isa Core.ReturnNode
+            # return statement
+            sv = st.val
+            return frame.ir2tape[sv]
         else
-            @info "Ignoring statement $st for the moment"
+            error("Unexpected statement type in CodeInfo: $st")
         end
     end
     # for now assume the returned value is always the last recorded
@@ -122,13 +162,22 @@ function trace!(t::Tracer, ci::CodeInfo, v_fargs...)
 end
 
 
+"""
+Same as trace!(), but tries to parse control flow constructs as well
+"""
+function trace_cf!(t::Tracer, ci::CodeInfo, v_fargs...)
+    # TODO
+end
+
+
 function trace(f, args...)
     ci = code_lowered(f, args)[1]
-    t = Tracer(Tape(), [], Set([+, *]))
+    t = Tracer(Tape(), [], Set([+, -, *, /, <, <=, >, >=]))
     v_fn = push!(t.tape, Input(f))
     v_args = [push!(t.tape, Input(a)) for a in args]
     v_fargs = [v_fn, v_args...]
-    trace!(t, ci, v_fargs...)
+    rv = trace!(t, ci, v_fargs...)
+    t.tape.result = rv
     return t.tape
 end
 
@@ -139,10 +188,33 @@ end
 
 ############################################################################
 
+
+function main()
+    f = linear
+    args = [1.0, 2.0, 3.0]
+    trace(f, args...)
+
+
+    f = while1
+    args = (2.0,)
+    tp = trace(f, args...)
+
+
+    ci = @code_lowered cond1(2.0)
+end
+
+
+
 mul(x, y) = x * y
 linear(x, a, b) = mul(a, x) + b
 
 pow(x, n) = for i=1:n x = x * x end
+
+
+function const1(x)
+    y = 1
+    return x + y
+end
 
 
 function cond1(x)
@@ -155,9 +227,10 @@ end
 
 
 function while1(x)
-    y = 2x
-    while y > 0
+    y = 10
+    while x > 5
         y -= 1
+        x /= 2
     end
     return y
 end
@@ -187,11 +260,3 @@ function while_break(x)
 end
 
 
-function main()
-    f = linear
-    args = [1.0, 2.0, 3.0]
-    trace(f, args...)
-
-
-    ci = @code_lowered cond1(2.0)
-end
