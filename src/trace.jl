@@ -68,6 +68,19 @@ function get_code_info(f, args...)
 end
 
 
+function get_code_info2(f, args...)
+    types = map(typeof, args)
+    mis = Base.method_instances(f, types)
+    if isempty(mis)
+        arg_type_str = join(types, ", ")
+        error("Cannot get CodeInfo for $f($arg_type_str)")
+    end
+    m = first(mis).def
+    ci = Base.uncompressed_ir(m)
+    return ci
+end
+
+
 """
     push_call!(tape::Tape, fn, args...; kwargs)
 
@@ -127,13 +140,13 @@ function trace!(t::Tracer, ci::CodeInfo, v_fargs...)
             sv = st.args[1]
             v_rhs = resolve_tape_vars(frame, st.args[2])[1]
             v = if v_rhs isa V
-                val = t.tape[v_rhs].val
-                push!(t.tape, Constant(promote_const_value(val)))
-            else
                 # there's no assignment operator, so we simply update the mapping
                 # for the LHS
                 frame.ir2tape[sv] = v_rhs
                 # push_call!(t.tape, identity, v_rhs)
+            else
+                val = t.tape[v_rhs].val
+                push!(t.tape, Constant(promote_const_value(val)))
             end
             frame.ir2tape[sv] = v
             frame.ir2tape[SSAValue(i)] = v
@@ -168,8 +181,7 @@ function trace!(t::Tracer, ci::CodeInfo, v_fargs...)
             # error("Unexpected statement type in CodeInfo: $st")
         end
     end
-    # for now assume the returned value is always the last recorded
-    # we will update this when control flow instructions are implemented
+    # if no ReturnNode was encountered, use last op on the tape
     return V(t.tape[V(end)])
 end
 

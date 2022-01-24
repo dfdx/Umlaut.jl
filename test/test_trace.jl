@@ -1,4 +1,4 @@
-import Ghost: V, Call, play!
+import Ghost: V, Call, play!, compile, Loop
 import Umlaut: trace
 
 inc_mul(a::Real, b::Real) = a * (b + 1.0)
@@ -96,152 +96,152 @@ end
 
 
 
-# function return_in_branch(x)
-#     if x > 0
-#         return 2x
-#     end
-#     return 3x
-# end
+function return_in_branch(x)
+    if x > 0
+        return 2x
+    end
+    return 3x
+end
 
-# @testset "trace: branches" begin
-#     # See https://github.com/dfdx/Ghost.jl/issues/8
-#     _, tape = trace(return_in_branch, 1.0)
-#     @test tape[V(length(tape))].args[1] == 2
+@testset "trace: branches" begin
+    # See https://github.com/dfdx/Ghost.jl/issues/8
+    _, tape = trace(return_in_branch, 1.0)
+    @test tape[V(length(tape))].args[1] == 2
 
-#     _, tape = trace(return_in_branch, -1.0)
-#     @test tape[V(length(tape))].args[1] == 3
-# end
-
-
-# function loop1(a, n)
-#     a = 2a
-#     for i in 1:n
-#         a = a * n
-#     end
-#     return a
-# end
-
-# function loop2(a, b)
-#     while b > 0
-#         a = a * b
-#         b = b - 1
-#     end
-#     return a
-# end
+    _, tape = trace(return_in_branch, -1.0)
+    @test tape[V(length(tape))].args[1] == 3
+end
 
 
-# function loop3(a, b)
-#     while b > 1
-#         b = b - 1
-#         a = b
-#         while a < 100
-#             a = a * b + 1
-#         end
-#     end
-#     return a
-# end
+function loop1(a, n)
+    a = 2a
+    for i in 1:n
+        a = a * n
+    end
+    return a
+end
+
+function loop2(a, b)
+    while b > 0
+        a = a * b
+        b = b - 1
+    end
+    return a
+end
 
 
-# function loop4(x, n, m)
-#     for i in 1:n
-#         for j in 1:m
-#             x = 2x
-#         end
-#     end
-#     return x
-# end
+function loop3(a, b)
+    while b > 1
+        b = b - 1
+        a = b
+        while a < 100
+            a = a * b + 1
+        end
+    end
+    return a
+end
 
 
-# function loop5(a, n)
-#     for i=1:3
-#         a = loop1(a, n)
-#     end
-#     return a
-# end
+function loop4(x, n, m)
+    for i in 1:n
+        for j in 1:m
+            x = 2x
+        end
+    end
+    return x
+end
 
-# function loop6(n)
-#     a = 0
-#     i = 1
-#     while true
-#         a += i
-#         if a > n
-#             break
-#         end
-#     end
-#     return a
-# end
 
-# function myabs(x)
-#     if x >= 0
-#         return x
-#     else
-#         return -x
-#     end
-# end
+function loop5(a, n)
+    for i=1:3
+        a = loop1(a, n)
+    end
+    return a
+end
 
-# function myabs2(x)
-#     if x <= 0
-#         return -x
-#     else
-#         return 1*x
-#     end
-# end
+function loop6(n)
+    a = 0
+    i = 1
+    while true
+        a += i
+        if a > n
+            break
+        end
+    end
+    return a
+end
 
-# @testset "trace: loops" begin
-#     should_trace_loops!(false)
+function myabs(x)
+    if x >= 0
+        return x
+    else
+        return -x
+    end
+end
 
-#     _, tape = trace(loop1, 1.0, 3)
-#     @test findfirst(op -> op isa Loop, tape.ops) === nothing
-#     # same number of iteration
-#     @test play!(tape, loop1, 2.0, 3) == loop1(2.0, 3)
-#     @test compile(tape)(loop1, 2.0, 3) == loop1(2.0, 3)
-#     # different number of iteration - with loop tracing off, should be incorrect
-#     @test play!(tape, loop1, 2.0, 4) != loop1(2.0, 4)
-#     @test compile(tape)(loop1, 2.0, 4) != loop1(2.0, 4)
+function myabs2(x)
+    if x <= 0
+        return -x
+    else
+        return 1*x
+    end
+end
 
-#     should_trace_loops!(true)
+@testset "trace: loops" begin
+    # should_trace_loops!(false)
 
-#     _, tape = trace(loop1, 1.0, 3)
-#     @test play!(tape, loop1, 2.0, 4) == loop1(2.0, 4)
-#     @test compile(tape)(loop1, 2.0, 4) == loop1(2.0, 4)
-#     @test findfirst(op -> op isa Loop, tape.ops) !== nothing
+    _, tape = trace(loop1, 1.0, 3)
+    @test findfirst(op -> op isa Loop, tape.ops) === nothing
+    # same number of iteration
+    @test play!(tape, loop1, 2.0, 3) == loop1(2.0, 3)
+    @test compile(tape)(loop1, 2.0, 3) == loop1(2.0, 3)
+    # different number of iteration - with loop tracing off, should be incorrect
+    @test play!(tape, loop1, 2.0, 4) != loop1(2.0, 4)
+    @test compile(tape)(loop1, 2.0, 4) != loop1(2.0, 4)
 
-#     _, tape = trace(loop2, 1.0, 3)
-#     @test play!(tape, loop2, 2.0, 4) == loop2(2.0, 4)
-#     @test compile(tape)(loop2, 2.0, 4) == loop2(2.0, 4)
-#     @test findfirst(op -> op isa Loop, tape.ops) !== nothing
+    # should_trace_loops!(true)
 
-#     _, tape = trace(loop3, 1.0, 3)
-#     @test play!(tape, loop3, 2.0, 4) == loop3(2.0, 4)
-#     @test compile(tape)(loop3, 2.0, 4) == loop3(2.0, 4)
-#     @test findfirst(op -> op isa Loop, tape.ops) !== nothing
+    # _, tape = trace(loop1, 1.0, 3)
+    # @test play!(tape, loop1, 2.0, 4) == loop1(2.0, 4)
+    # @test compile(tape)(loop1, 2.0, 4) == loop1(2.0, 4)
+    # @test findfirst(op -> op isa Loop, tape.ops) !== nothing
 
-#     _, tape = trace(loop4, 1.0, 2, 3)
-#     @test play!(tape, loop4, 2.0, 3, 4) == loop4(2.0, 3, 4)
-#     @test compile(tape)(loop4, 2.0, 3, 4) == loop4(2.0, 3, 4)
-#     loop_idx = findfirst(op -> op isa Loop, tape.ops)
-#     @test loop_idx !== nothing
-#     subtape = tape[V(loop_idx)].subtape
-#     @test findfirst(op -> op isa Loop, subtape.ops) !== nothing
+    # _, tape = trace(loop2, 1.0, 3)
+    # @test play!(tape, loop2, 2.0, 4) == loop2(2.0, 4)
+    # @test compile(tape)(loop2, 2.0, 4) == loop2(2.0, 4)
+    # @test findfirst(op -> op isa Loop, tape.ops) !== nothing
 
-#     _, tape = trace(loop5, 1.0, 3)
-#     @test play!(tape, loop5, 2.0, 4) == loop5(2.0, 4)
-#     @test compile(tape)(loop5, 2.0, 4) == loop5(2.0, 4)
-#     loop_idx = findfirst(op -> op isa Loop, tape.ops)
-#     @test loop_idx !== nothing
-#     subtape = tape[V(loop_idx)].subtape
-#     @test findfirst(op -> op isa Loop, subtape.ops) !== nothing
+    # _, tape = trace(loop3, 1.0, 3)
+    # @test play!(tape, loop3, 2.0, 4) == loop3(2.0, 4)
+    # @test compile(tape)(loop3, 2.0, 4) == loop3(2.0, 4)
+    # @test findfirst(op -> op isa Loop, tape.ops) !== nothing
 
-#     should_trace_loops!()
+    # _, tape = trace(loop4, 1.0, 2, 3)
+    # @test play!(tape, loop4, 2.0, 3, 4) == loop4(2.0, 3, 4)
+    # @test compile(tape)(loop4, 2.0, 3, 4) == loop4(2.0, 3, 4)
+    # loop_idx = findfirst(op -> op isa Loop, tape.ops)
+    # @test loop_idx !== nothing
+    # subtape = tape[V(loop_idx)].subtape
+    # @test findfirst(op -> op isa Loop, subtape.ops) !== nothing
 
-#     # Test with fixed boolean condition
-#     # Currently broken
-#     #=
-#     _, tape = trace(loop6, 3)
-#     @test play!(tape, loop6, 3) == loop6(3)
-#     @test compile(tape, loop6, 3) == loop6(3)
-#     =#
-# end
+    # _, tape = trace(loop5, 1.0, 3)
+    # @test play!(tape, loop5, 2.0, 4) == loop5(2.0, 4)
+    # @test compile(tape)(loop5, 2.0, 4) == loop5(2.0, 4)
+    # loop_idx = findfirst(op -> op isa Loop, tape.ops)
+    # @test loop_idx !== nothing
+    # subtape = tape[V(loop_idx)].subtape
+    # @test findfirst(op -> op isa Loop, subtape.ops) !== nothing
+
+    # should_trace_loops!()
+
+    # Test with fixed boolean condition
+    # Currently broken
+    #=
+    _, tape = trace(loop6, 3)
+    @test play!(tape, loop6, 3) == loop6(3)
+    @test compile(tape, loop6, 3) == loop6(3)
+    =#
+end
 
 # @testset "trace: branches" begin
 #     should_assert_branches!(true)
