@@ -39,6 +39,11 @@ function no_input()
 end
 
 
+function vararg_fn(x, xs...)
+    return x + sum(xs)
+end
+
+
 @testset "trace" begin
     # calls
     val, tape = trace(inc_mul, 2.0, 3.0)
@@ -87,11 +92,19 @@ end
 
     # constant return value
     _, tape = trace(constant_return_value, 1.0)
-    @test play!(tape, 2.0) === nothing
+    @test play!(tape, nothing, 2.0) === nothing
 
     # no input
     _, tape = trace(no_input)
     @test tape[V(2)].fn == print
+
+    # varargs
+    _, tape = trace(vararg_fn, 1, 2, 3)
+    @test play!(tape, vararg_fn, 4, 5, 6, 7) == vararg_fn(4, 5, 6, 7)
+    @test play!(tape, vararg_fn, 4, 5) == vararg_fn(4, 5)
+    @test compile(tape)(vararg_fn, 4, 5, 6, 7) == vararg_fn(4, 5, 6, 7)
+    @test compile(tape)(vararg_fn, 4, 5) == vararg_fn(4, 5)
+
 end
 
 
@@ -322,7 +335,7 @@ end
 @testset "trace: extra tests" begin
     # a few smoke tests to ensure static tracer handles jumps properly
     _, tape = trace(pow, 2.0, 3)
-    @test play!(tape, 3.0, 3) == pow(3.0, 3)
+    @test play!(tape, pow, 3.0, 3) == pow(3.0, 3)
 
     _, tape = trace(const1, 2.0)
     @test play!(tape, const1, 3.0) == const1(3.0)

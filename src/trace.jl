@@ -111,7 +111,7 @@ function trace!(t::Tracer, ci::CodeInfo, v_fargs...)
     i = 1
     while i <= length(ci.code)
         st = rewrite_special_cases(ci.code[i])
-        global STATE = (t, ci, v_fargs, frame, i, st)
+        # global STATE = (t, ci, v_fargs, frame, i, st)
         if Meta.isexpr(st, :call) || (Meta.isexpr(st, :(=)) && Meta.isexpr(st.args[2], :call))
             # function call
             sv = SSAValue(i)
@@ -182,9 +182,13 @@ end
 function trace(f, args...; primitives=PRIMITIVES)
     primitives = ensure_function_resolver(primitives)
     ci = get_code_info(f, args...)
+    meth = which(f, map(typeof, args))
+    # xargs are here to support vararg inputs
+    xargs = meth.isva ? (args[1:meth.nargs - 2]..., args[meth.nargs - 1:end]) : args
     t = Tracer(Tape(), primitives)
+    t.tape.meta[:isva] = meth.isva
     v_fn = push!(t.tape, Input(f))
-    v_args = [push!(t.tape, Input(a)) for a in args]
+    v_args = [push!(t.tape, Input(a)) for a in xargs]
     v_fargs = [v_fn, v_args...]
     rv = trace!(t, ci, v_fargs...)
     t.tape.result = rv
