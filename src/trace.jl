@@ -5,18 +5,20 @@ import Ghost: promote_const_value, __new__
 
 
 mutable struct Frame
-    ir2tape::Dict{Any, Variable}
+    # typically values are Variables, but can also be constant values
+    ir2tape::Dict{Union{SSAValue, SlotNumber}, Any}
 end
 
 
 function Frame(tape::Tape, v_fargs...)
-    ir2tape = Dict{Union{SSAValue, SlotNumber}, V}()
+    ir2tape = Dict{Union{SSAValue, SlotNumber}, Any}()
     for (i, v) in enumerate(v_fargs)
         if v isa V
             ir2tape[SlotNumber(i)] = v
         else
-            c = push!(tape, Constant(promote_const_value(v)))
-            ir2tape[SlotNumber(i)] = c
+            # c = push!(tape, Constant(promote_const_value(v)))
+            # ir2tape[SlotNumber(i)] = c
+            ir2tape[SlotNumber(i)] = v  # experimental
         end
 
     end
@@ -40,11 +42,6 @@ function resolve_tape_vars(frame::Frame, sv_fargs...)
             push!(v_fargs, frame.ir2tape[sv])
         else
             push!(v_fargs, promote_const_value(sv))
-        # elseif sv isa GlobalRef
-        #     push!(v_fargs, getfield(sv.mod, sv.name))
-        # else
-        #     # treat as constant value
-        #     push!(v_fargs, sv)
         end
     end
     return v_fargs
@@ -138,18 +135,11 @@ function trace!(t::Tracer, ci::CodeInfo, v_fargs...)
         elseif Meta.isexpr(st, :(=))
             # constant or assignment
             sv = st.args[1]
-            v_rhs = resolve_tape_vars(frame, st.args[2])[1]
-            v = if v_rhs isa V
-                # there's no assignment operator, so we simply update the mapping
-                # for the LHS
-                frame.ir2tape[sv] = v_rhs
-                # push_call!(t.tape, identity, v_rhs)
-            else
-                val = t.tape[v_rhs].val
-                push!(t.tape, Constant(promote_const_value(val)))
-            end
-            frame.ir2tape[sv] = v
-            frame.ir2tape[SSAValue(i)] = v
+            rhs = resolve_tape_vars(frame, st.args[2])[1]
+            # RHS may be a variable or a constant value; in both cases we simply
+            # update the mapping from LHS (SlotNumber & SSAValue) to the RHS
+            frame.ir2tape[sv] = rhs
+            frame.ir2tape[SSAValue(i)] = rhs
             i += 1
         elseif st isa SlotNumber
             # assignment
@@ -158,9 +148,11 @@ function trace!(t::Tracer, ci::CodeInfo, v_fargs...)
             i += 1
         elseif st isa Core.GotoIfNot
             # conditional jump
-            v_cond = frame.ir2tape[st.cond]
+            cond_val = (st.cond isa SlotNumber || st.cond isa SSAValue ?
+                            t.tape[frame.ir2tape[st.cond]].val :   # resolve tape var
+                            st.cond)                               # literal condition (e.g. while true)
             # if not cond, set i to destination, otherwise step forward
-            i = !t.tape[v_cond].val ? st.dest : i + 1
+            i = !cond_val ? st.dest : i + 1
         elseif st isa Core.GotoNode
             # unconditional jump
             i = st.label
@@ -168,7 +160,8 @@ function trace!(t::Tracer, ci::CodeInfo, v_fargs...)
             # return statement
             sv = st.val
             if sv isa SSAValue || sv isa SlotNumber
-                return frame.ir2tape[sv]
+                val = frame.ir2tape[sv]
+                return val isa V ? val : push!(t.tape, Constant(promote_const_value(val)))
             else
                 v = push!(t.tape, Constant(promote_const_value(sv)))
                 return v

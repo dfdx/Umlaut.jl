@@ -256,3 +256,88 @@ end
 
 #     should_assert_branches!(false)
 # end
+
+
+# TODO: add these tests to Ghost.jl as well
+
+function pow(x, n)
+    r = 1
+    for i=1:n
+        r = x * r
+    end
+    return r
+end
+
+
+function const1(x)
+    y = 1
+    return x + y
+end
+
+
+function cond1(x)
+    y = 2x
+    if x > 0
+        y = 3x
+    end
+    return y
+end
+
+
+function while1(x)
+    y = 10
+    while x > 5
+        y -= 1
+        x /= 2
+    end
+    return y
+end
+
+
+function while_continue(x)
+    y = 1
+    while y < x
+        if y % 3 == 0
+            y += 1
+            continue
+        end
+        y *= 2
+    end
+    return y
+end
+
+
+function while_break(x)
+    y = 1
+    while true
+        if y > x
+            break
+        end
+        y *= 2y
+    end
+    return y
+end
+
+
+@testset "trace: extra tests" begin
+    # a few smoke tests to ensure static tracer handles jumps properly
+    _, tape = trace(pow, 2.0, 3)
+    @test play!(tape, 3.0, 3) == pow(3.0, 3)
+
+    _, tape = trace(const1, 2.0)
+    @test play!(tape, const1, 3.0) == const1(3.0)
+
+    _, tape = trace(cond1, 2.0)
+    @test play!(tape, cond1, 3.0) == cond1(3.0)
+
+    _, tape = trace(while1, 2.0)
+    @test play!(tape, while1, 2.0) == while1(2.0)
+    _, tape = trace(while1, 7.0)
+    @test play!(tape, while1, 7.0) == while1(7.0)
+
+    _, tape = trace(while_continue, 3.0)
+    @test play!(tape, while_continue, 3.0) == while_continue(3.0)
+
+    _, tape = trace(while_break, 3.0)
+    @test play!(tape, while_break, 3.0) == while_break(3.0)
+end
