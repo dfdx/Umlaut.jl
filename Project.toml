@@ -1,8 +1,14 @@
 name = "Umlaut"
 uuid = "92992a2b-8ce5-4a9c-bb9d-58be9a7dc841"
-authors = ["Andrei Zhabinski <faithlessfriend@gmail.com>"]
+authors = ["Andrei Zhabinski <andrei.zhabinski@gmail.com>"]
 version = "0.1.0"
 
 [deps]
+Documenter = "e30172f5-a6a5-5a46-863b-614d45cd2de4"
 Ghost = "4f8f7498-1303-42e1-920c-5033445536df"
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
+
+[compat]
+Documenter = "0.27"
+Ghost = "0.3.3"
+julia = "1.6"

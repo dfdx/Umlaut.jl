@@ -1,4 +1,4 @@
-import Ghost: Tape, V, Call, mkcall, play!, compile, Loop
+import Umlaut: Tape, V, Call, mkcall, play!, compile, Loop
 import Umlaut: trace, record_primitive!
 
 inc_mul(a::Real, b::Real) = a * (b + 1.0)
