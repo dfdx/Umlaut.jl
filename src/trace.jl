@@ -1,4 +1,4 @@
-import Ghost: promote_const_value, __new__
+import Ghost: promote_const_value, __new__, is_primitive
 
 # v_xxx - Variable xxx
 # sv_xxx - SSAValue xxx
@@ -50,7 +50,7 @@ end
 
 mutable struct Tracer
     tape::Tape
-    primitives::FunctionResolver
+    is_primitive::Function
 end
 
 
@@ -106,6 +106,34 @@ end
 rewrite_special_cases(st) = st
 
 
+"""
+    record_primitive!(tape::Tape, v_fargs...)
+
+Record a primitive function call to the tape.
+
+By default, this function simply pushes the function call to the tape,
+but it can also be overwritten to do more complex logic. For example,
+instead of recording the function call, a user can push one or more
+other calls, essentially implementing `replace!()` right during the
+tracing and without calling the function twice.
+
+Examples:
+=========
+
+The following code shows how to replace f(args...) with ChainRules.rrule(f, args...)
+duing the tracing:
+
+    function record_primitive!(tape::Tape{RRuleContext}, v_fargs)
+        v_rr = push!(tape, mkcall(rrule, v_fargs...))
+        v_val = push!(tape, mkcall(getfield, v_rr, 1))
+        v_pb = push!(tape, mkcall(getfield, v_rr, 1))
+        tape.c.pullbacks[v_val] = v_pb
+        return v_val   # the function should return Variable with the result
+    end
+"""
+record_primitive!(tape::Tape, v_fargs...) = push_call!(tape, v_fargs...)
+
+
 function trace!(t::Tracer, ci::CodeInfo, v_fargs...)
     frame = Frame(t.tape, v_fargs...)
     i = 1
@@ -120,8 +148,9 @@ function trace!(t::Tracer, ci::CodeInfo, v_fargs...)
             fvals = [v isa V ? t.tape[v].val : v for v in vs]
             # v = if fvals[1] in t.primitives
             sig = Tuple{map(typeof, fvals)...}
-            v = if sig in t.primitives || fvals[1] === Base.Generator
-                push_call!(t.tape, vs...)
+            v = if t.is_primitive(sig) || fvals[1] === Base.Generator
+                # push_call!(t.tape, vs...)
+                record_primitive!(t.tape, vs...)
             else
                 trace!(t, get_code_info(fvals[1], fvals[2:end]...), vs...)
             end
@@ -179,13 +208,30 @@ function trace!(t::Tracer, ci::CodeInfo, v_fargs...)
 end
 
 
-function trace(f, args...; primitives=PRIMITIVES)
-    primitives = ensure_function_resolver(primitives)
+"""
+    trace(f, args...; is_primitive, primitives)
+
+Trace function call, produce call value and a Tape.
+`trace` records to the tape primitive methods and recursively dives into
+non-primitives. There are 2 ways to tell `trace` that a particular method
+is a primitive:
+
+* provide `is_primitive(sig) -> Bool` function, where `sig` is
+    is a method signature, e.g. `Tuple{typeof(f), map(typeof, args)...}`
+* provide an iterable `primitives`; in this case `trace` matches
+    all methods of this function
+"""
+function trace(f, args...; ctx=Dict(), is_primitive=is_primitive, primitives=nothing)
+    # primitives = ensure_function_resolver(primitives)
+    if primitives !== nothing
+        sigs = FunctionResolver{Bool}([Tuple{typeof(f), Vararg} => true for f in primitives])
+        is_primitive = sig -> sig in sigs
+    end
     ci = get_code_info(f, args...)
     meth = which(f, map(typeof, args))
     # xargs are here to support vararg inputs
     xargs = meth.isva ? (args[1:meth.nargs - 2]..., args[meth.nargs - 1:end]) : args
-    t = Tracer(Tape(), primitives)
+    t = Tracer(Tape(ctx), is_primitive)
     t.tape.meta[:isva] = meth.isva
     v_fn = push!(t.tape, Input(f))
     v_args = [push!(t.tape, Input(a)) for a in xargs]

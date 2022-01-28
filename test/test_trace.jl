@@ -1,5 +1,5 @@
-import Ghost: V, Call, play!, compile, Loop
-import Umlaut: trace
+import Ghost: Tape, V, Call, mkcall, play!, compile, Loop
+import Umlaut: trace, record_primitive!
 
 inc_mul(a::Real, b::Real) = a * (b + 1.0)
 inc_mul(A::AbstractArray, B::AbstractArray) = inc_mul.(A, B)
@@ -353,4 +353,25 @@ end
 
     _, tape = trace(while_break, 3.0)
     @test play!(tape, while_break, 3.0) == while_break(3.0)
+end
+
+
+mutable struct CountingReplacingCtx
+    replace::Pair
+    count::Int
+end
+
+function record_primitive!(tape::Tape{CountingReplacingCtx}, v_fargs...)
+    if v_fargs[1] == tape.c.replace[1]
+        tape.c.count += 1
+        return push!(tape, mkcall(tape.c.replace[2], v_fargs[2:end]...))
+    else
+        return push!(tape, mkcall(v_fargs...))
+    end
+end
+
+@testset "record_primitive!" begin
+    _, tape = trace(loop1, 2.0, 3; ctx=CountingReplacingCtx((*) => (+), 0))
+    @test tape.c.count == 4
+    @test count(op -> op isa Call && op.fn == (+), tape) == 4
 end
