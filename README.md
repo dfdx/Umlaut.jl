@@ -1,5 +1,10 @@
 # Ümlaut
 
+<p align="center">
+  <img height="300" src="https://github.com/dfdx/Umlaut.jl/blob/main/docs/src/logo.png">
+</p>
+
+
 Umlaut is a new experimental code tracer for [Ghost.jl](https://github.com/dfdx/Ghost.jl). The main goals of Umlaut are:
 
 * avoid dependency on unmaintained packages like IRTools
