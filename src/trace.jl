@@ -134,6 +134,17 @@ duing the tracing:
 record_primitive!(tape::Tape, v_fargs...) = push_call!(tape, v_fargs...)
 
 
+function is_special_primitive(f)
+    # In these cases callable is a UnionAll, so we can't just put it into a FunctionResolver.
+    # In general, we could put this logic into the default `is_primitive`, but it may be
+    # harder to expand then. Let's try this design and see how it works.
+    return (
+        f === Base.Generator ||
+        f isa Type && f <: NamedTuple
+    )
+end
+
+
 function trace!(t::Tracer, ci::CodeInfo, v_fargs...)
     frame = Frame(t.tape, v_fargs...)
     i = 1
@@ -146,12 +157,13 @@ function trace!(t::Tracer, ci::CodeInfo, v_fargs...)
             ex = Meta.isexpr(st, :(=)) ? st.args[2] : st
             vs = resolve_tape_vars(frame, ex.args...)
             fvals = [v isa V ? t.tape[v].val : v for v in vs]
-            # v = if fvals[1] in t.primitives
+            # fvals[1] == NamedTuple{(:dims,)} && error("STOP")
             sig = Tuple{map(typeof, fvals)...}
-            v = if t.is_primitive(sig) || fvals[1] === Base.Generator
+            v = if t.is_primitive(sig) || is_special_primitive(fvals[1])
                 # push_call!(t.tape, vs...)
                 record_primitive!(t.tape, vs...)
             else
+                # println("diving into $(fvals)")
                 trace!(t, get_code_info(fvals[1], fvals[2:end]...), vs...)
             end
             frame.ir2tape[sv] = v
