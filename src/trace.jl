@@ -1,4 +1,4 @@
-import Ghost: promote_const_value, __new__, is_primitive
+import Ghost: promote_const_value, __new__
 
 # v_xxx - Variable xxx
 # sv_xxx - SSAValue xxx
@@ -107,6 +107,30 @@ rewrite_special_cases(st) = st
 
 
 """
+    is_primitive(sig)
+
+The default implementation of `is_primitive` argument in [`trace()`](@ref).
+Returns `true` if the method with the provided signature is defined
+in one of the Julia's built-in modules, e.g. `Base`, `Core`, `Broadcast`, etc.
+"""
+function is_primitive(sig)
+    FT = get_type_parameters(sig)[1]
+    FT in (typeof(__new__), Colon) && return true
+    FT <: NamedTuple && return true
+    modl = parentmodule(FT)
+    modl in (Base, Core, Core.Intrinsics, Broadcast, Statistics, LinearAlgebra) && return true
+    return false
+end
+
+
+function is_special_primitive(f)
+    return (
+        f === Base.Generator
+    )
+end
+
+
+"""
     record_primitive!(tape::Tape, v_fargs...)
 
 Record a primitive function call to the tape.
@@ -134,23 +158,12 @@ duing the tracing:
 record_primitive!(tape::Tape, v_fargs...) = push_call!(tape, v_fargs...)
 
 
-function is_special_primitive(f)
-    # In these cases callable is a UnionAll, so we can't just put it into a FunctionResolver.
-    # In general, we could put this logic into the default `is_primitive`, but it may be
-    # harder to expand then. Let's try this design and see how it works.
-    return (
-        f === Base.Generator ||
-        f isa Type && f <: NamedTuple
-    )
-end
-
-
 function trace!(t::Tracer, ci::CodeInfo, v_fargs...)
     frame = Frame(t.tape, v_fargs...)
     i = 1
     while i <= length(ci.code)
         st = rewrite_special_cases(ci.code[i])
-        # global STATE = (t, ci, v_fargs, frame, i, st)
+        global STATE = (t, ci, v_fargs, frame, i, st)
         if Meta.isexpr(st, :call) || (Meta.isexpr(st, :(=)) && Meta.isexpr(st.args[2], :call))
             # function call
             sv = SSAValue(i)
