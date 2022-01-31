@@ -1,4 +1,4 @@
-import Umlaut: Tape, V, Call, mkcall, play!, compile, Loop
+import Umlaut: Tape, V, Call, mkcall, play!, compile, Loop, __new__
 import Umlaut: trace, record_primitive!
 
 inc_mul(a::Real, b::Real) = a * (b + 1.0)
@@ -42,6 +42,10 @@ end
 function vararg_fn(x, xs...)
     return x + sum(xs)
 end
+
+
+mutable struct Point x; y end
+constructor_loss(a) = (p = Point(a, a); p.x + p.y)
 
 
 @testset "trace" begin
@@ -104,6 +108,11 @@ end
     @test play!(tape, vararg_fn, 4, 5) == vararg_fn(4, 5)
     @test compile(tape)(vararg_fn, 4, 5, 6, 7) == vararg_fn(4, 5, 6, 7)
     @test compile(tape)(vararg_fn, 4, 5) == vararg_fn(4, 5)
+
+    # constructors
+    _, tape = trace(constructor_loss, 4.0)
+    @test tape[V(3)].val == Point
+    @test tape[V(4)].fn == __new__
 
 end
 

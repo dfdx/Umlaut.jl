@@ -117,6 +117,7 @@ function is_primitive(sig)
     FT = get_type_parameters(sig)[1]
     FT in (typeof(__new__), Colon) && return true
     FT <: NamedTuple && return true
+    FT <: DataType && return false  # usually we want to recurse to constructors
     modl = parentmodule(FT)
     modl in (Base, Core, Core.Intrinsics, Broadcast, Statistics, LinearAlgebra) && return true
     return false
