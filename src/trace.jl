@@ -50,7 +50,7 @@ end
 
 mutable struct Tracer
     tape::Tape
-    is_primitive::Function
+    isprimitive::Function
 end
 
 
@@ -131,6 +131,24 @@ function is_special_primitive(f)
 end
 
 
+
+"""
+    is_primitive(f, args...)
+
+The default implementation of `isprimitive` argument in [`trace()`](@ref).
+Returns `true` if the method with the provided signature is defined
+in one of the Julia's built-in modules, e.g. `Base`, `Core`, `Broadcast`, etc.
+"""
+function isprimitive(f, args...)
+    f in (__new__, Colon(), Base.Generator) && return true
+    f isa NamedTuple && return true
+    f isa DataType && return false   # usually we want to recurse to constructors
+    modl = parentmodule(f)
+    modl in (Base, Core, Core.Intrinsics, Broadcast, Statistics, LinearAlgebra) && return true
+    return false
+end
+
+
 """
     record_primitive!(tape::Tape, v_fargs...)
 
@@ -171,13 +189,9 @@ function trace!(t::Tracer, ci::CodeInfo, v_fargs...)
             ex = Meta.isexpr(st, :(=)) ? st.args[2] : st
             vs = resolve_tape_vars(frame, ex.args...)
             fvals = [v isa V ? t.tape[v].val : v for v in vs]
-            # fvals[1] == NamedTuple{(:dims,)} && error("STOP")
-            sig = Tuple{map(typeof, fvals)...}
-            v = if t.is_primitive(sig) || is_special_primitive(fvals[1])
-                # push_call!(t.tape, vs...)
+            v = if t.isprimitive(fvals...)
                 record_primitive!(t.tape, vs...)
             else
-                # println("diving into $(fvals)")
                 trace!(t, get_code_info(fvals[1], fvals[2:end]...), vs...)
             end
             frame.ir2tape[sv] = v
@@ -235,29 +249,54 @@ end
 
 
 """
-    trace(f, args...; is_primitive, primitives)
+    trace(f, args...; ctx=Dict(), isprimitive=isprimitive)
 
-Trace function call, produce call value and a Tape.
+Trace function call, return the result and the corresponding Tape.
 `trace` records to the tape primitive methods and recursively dives into
-non-primitives. There are 2 ways to tell `trace` that a particular method
-is a primitive:
+non-primitives.
 
-* provide `is_primitive(sig) -> Bool` function, where `sig` is
-    is a method signature, e.g. `Tuple{typeof(f), map(typeof, args)...}`
-* provide an iterable `primitives`; in this case `trace` matches
-    all methods of this function
+Keyword arguments:
+==================
+
+* isprimitive - function that decides whether a particular call should be treated
+    as a primitive. Default: Umlaut.isprimitive(f, args...).
+* ctx - context to attach to the Tape. Default: Dict().
+
+Examples:
+=========
+
+    foo(x) = 2x
+    bar(x) = foo(x) + 1
+
+    val, tape = trace(bar, 2.0)
+    # (5.0, Tape{Dict{Any, Any}}
+    #   inp %1::typeof(bar)
+    #   inp %2::Float64
+    #   %3 = *(2, %2)::Float64
+    #   %4 = +(%3, 1)::Float64
+    # )
+
+    custom_isprimitive(f, args...) = isprimitive(f, args...) || f in [foo]
+    val, tape = trace(bar, 2.0; isprimitive=custom_isprimitive)
+    # (5.0, Tape{Dict{Any, Any}}
+    #   inp %1::typeof(bar)
+    #   inp %2::Float64
+    #   %3 = foo(%2)::Float64
+    #   %4 = +(%3, 1)::Float64
+    # )
+
 """
-function trace(f, args...; ctx=Dict(), is_primitive=is_primitive, primitives=nothing)
+function trace(f, args...; ctx=Dict(), isprimitive=isprimitive, deprecated_kws...)
     # primitives = ensure_function_resolver(primitives)
-    if primitives !== nothing
-        sigs = FunctionResolver{Bool}([Tuple{typeof(f), Vararg} => true for f in primitives])
-        is_primitive = sig -> sig in sigs
-    end
+    # if primitives !== nothing
+    #     sigs = FunctionResolver{Bool}([Tuple{typeof(f), Vararg} => true for f in primitives])
+    #     is_primitive = sig -> sig in sigs
+    # end
     ci = get_code_info(f, args...)
     meth = which(f, map(typeof, args))
     # xargs are here to support vararg inputs
     xargs = meth.isva ? (args[1:meth.nargs - 2]..., args[meth.nargs - 1:end]) : args
-    t = Tracer(Tape(ctx), is_primitive)
+    t = Tracer(Tape(ctx), isprimitive)
     t.tape.meta[:isva] = meth.isva
     v_fn = push!(t.tape, Input(f))
     v_args = [push!(t.tape, Input(a)) for a in xargs]

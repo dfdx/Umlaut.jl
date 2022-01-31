@@ -69,7 +69,7 @@ constructor_loss(a) = (p = Point(a, a); p.x + p.y)
     # primitives
     x = 3.0
     val1, tape1 = trace(non_primitive_caller, x)
-    val2, tape2 = trace(non_primitive_caller, x; primitives=Set([non_primitive, sin]))
+    val2, tape2 = trace(non_primitive_caller, x; isprimitive=(f, args...) -> f in Set([non_primitive, sin]))
 
     @test val1 == val2
     @test any(op isa Call && op.fn == (*) for op in tape1)
