@@ -322,12 +322,8 @@ Examples:
     #   %4 = +(%3, 1)::Float64
     # )
 """
-function trace(f, args...; ctx=Dict(), isprimitive=isprimitive, deprecated_kws...)
-    # primitives = ensure_function_resolver(primitives)
-    # if primitives !== nothing
-    #     sigs = FunctionResolver{Bool}([Tuple{typeof(f), Vararg} => true for f in primitives])
-    #     is_primitive = sig -> sig in sigs
-    # end
+function trace(f, args...; ctx=Dict(), deprecated_kws...)
+    warn_deprecated_keywords(deprecated_kws)
     ci = get_code_info(f, args...)
     meth = which(f, map(typeof, args))
     # xargs are here to support vararg inputs

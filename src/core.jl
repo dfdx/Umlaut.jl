@@ -6,5 +6,6 @@ import Statistics, LinearAlgebra   # include primitives from these stanard modul
 
 
 include("utils.jl")
+include("deprecated.jl")
 include("trace.jl")
 include("trace_cf.jl")
