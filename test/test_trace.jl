@@ -1,5 +1,5 @@
 import Umlaut: Tape, V, Call, mkcall, play!, compile, Loop, __new__
-import Umlaut: trace, record_primitive!
+import Umlaut: trace, isprimitive, record_primitive!, BaseCtx
 
 inc_mul(a::Real, b::Real) = a * (b + 1.0)
 inc_mul(A::AbstractArray, B::AbstractArray) = inc_mul.(A, B)
@@ -8,6 +8,10 @@ inc_mul2(A::AbstractArray, B::AbstractArray) = A .* (B .+ 1)
 
 non_primitive(x) = 2x + 1
 non_primitive_caller(x) = sin(non_primitive(x))
+
+struct MyCtx end
+
+isprimitive(ctx::MyCtx, f, args...) = isprimitive(BaseCtx(), f, args...) || f == non_primitive
 
 
 make_tuple(a, b) = (a, b)
@@ -69,12 +73,16 @@ constructor_loss(a) = (p = Point(a, a); p.x + p.y)
     # primitives
     x = 3.0
     val1, tape1 = trace(non_primitive_caller, x)
-    val2, tape2 = trace(non_primitive_caller, x; isprimitive=(f, args...) -> f in Set([non_primitive, sin]))
+    val2, tape2 = trace(non_primitive_caller, x; ctx=BaseCtx([non_primitive, sin]))
+    val3, tape3 = trace(non_primitive_caller, x; ctx=MyCtx())
 
     @test val1 == val2
+    @test val1 == val3
     @test any(op isa Call && op.fn == (*) for op in tape1)
     @test tape2[V(3)].fn == non_primitive
     @test tape2[V(4)].fn == sin
+    @test tape3[V(3)].fn == non_primitive
+    @test tape3[V(4)].fn == sin
 
     # tuple unpacking
     val, tape = trace(tuple_unpack, 4.0)

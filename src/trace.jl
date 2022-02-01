@@ -1,8 +1,12 @@
 import Ghost: promote_const_value, __new__
 
+# Naming:
 # v_xxx - Variable xxx
-# sv_xxx - SSAValue xxx
+# sv_xxx - SSAValue xxx or SlotNumber xxx
 
+###############################################################################
+#                                  Frame                                      #
+###############################################################################
 
 mutable struct Frame
     # typically values are Variables, but can also be constant values
@@ -48,9 +52,100 @@ function resolve_tape_vars(frame::Frame, sv_fargs...)
 end
 
 
+###############################################################################
+#                           Context & Primitives                              #
+###############################################################################
+
+"""
+Dict-like tracing context that treats as primitives all functions from the
+standard Julia modules (e.g. Base, Core, Statistics, etc.)
+"""
+struct BaseCtx
+    primitives::Set
+    data::Dict
+end
+
+BaseCtx() = BaseCtx(Set(), Dict())
+BaseCtx(primitives) = BaseCtx(Set(primitives), Dict())
+
+function Base.show(io::IO, ctx::BaseCtx)
+    n_primitives = length(ctx.primitives)
+    n_entries = length(ctx.data)
+    print(io, "DefaultCtx($n_primitives primitives, $n_entries entries)")
+end
+
+Base.getindex(ctx::BaseCtx, key) = getindex(ctx.data, key)
+Base.setindex!(ctx::BaseCtx, val, key) = setindex!(ctx.data, val, key)
+
+
+"""
+    isprimitive(ctx::BaseCtx, f, args...)
+
+The default implementation of `isprimitive` used in [`trace()`](@ref).
+Returns `true` if the method with the provided signature is defined
+in one of the Julia's built-in modules, e.g. `Base`, `Core`, `Broadcast`, etc.
+"""
+function isprimitive(ctx::BaseCtx, f, args...)
+    if isempty(ctx.primitives)
+        f in (__new__, Colon(), Base.Generator) && return true
+        f isa NamedTuple && return true
+        f isa DataType && return false   # usually we want to recurse to constructors
+        modl = parentmodule(f)
+        modl in (Base, Core, Core.Intrinsics, Broadcast, Statistics, LinearAlgebra) && return true
+        return false
+    else
+        return f in ctx.primitives
+    end
+end
+
+
+"""
+    isprimitive(ctx::Any, f, args...)
+
+Fallback implementation of `isprimitive()`, behaves the same way
+as `isprimitive(BaseCtx(), f, args...)`.
+"""
+isprimitive(ctx::Any, f, args...) = isprimitive(BaseCtx(), f, args...)
+
+
+"""
+    record_primitive!(tape::Tape{C}, v_fargs...) where C
+
+Record a primitive function call to the tape.
+
+By default, this function simply pushes the function call to the tape,
+but it can also be overwritten to do more complex logic. For example,
+instead of recording the function call, a user can push one or more
+other calls, essentially implementing `replace!()` right during the
+tracing and without calling the function twice.
+
+Examples:
+=========
+
+The following code shows how to replace f(args...) with ChainRules.rrule(f, args...)
+duing the tracing:
+
+    function record_primitive!(tape::Tape{RRuleContext}, v_fargs)
+        v_rr = push!(tape, mkcall(rrule, v_fargs...))
+        v_val = push!(tape, mkcall(getfield, v_rr, 1))
+        v_pb = push!(tape, mkcall(getfield, v_rr, 1))
+        tape.c.pullbacks[v_val] = v_pb
+        return v_val   # the function should return Variable with the result
+    end
+
+
+See also: [`isprimitive()`](@ref)
+"""
+record_primitive!(tape::Tape, v_fargs...) = push_call!(tape, v_fargs...)
+
+
+###############################################################################
+#                                 Tracing                                     #
+###############################################################################
+
+
 mutable struct Tracer
     tape::Tape
-    isprimitive::Function
 end
 
 
@@ -90,7 +185,6 @@ function push_call!(tape::Tape, fn, args...; kwargs...)
         args = (kwargs, fn, args...)
         fn = Core.kwfunc(fn)
     end
-    # op = tape.c.exec ? mkcall(fn, args...) : mkcall(fn, args...; val=nothing)
     op = mkcall(fn, args...)
     return push!(tape, op)
 end
@@ -106,77 +200,6 @@ end
 rewrite_special_cases(st) = st
 
 
-"""
-    is_primitive(sig)
-
-The default implementation of `is_primitive` argument in [`trace()`](@ref).
-Returns `true` if the method with the provided signature is defined
-in one of the Julia's built-in modules, e.g. `Base`, `Core`, `Broadcast`, etc.
-"""
-function is_primitive(sig)
-    FT = get_type_parameters(sig)[1]
-    FT in (typeof(__new__), Colon) && return true
-    FT <: NamedTuple && return true
-    FT <: DataType && return false  # usually we want to recurse to constructors
-    modl = parentmodule(FT)
-    modl in (Base, Core, Core.Intrinsics, Broadcast, Statistics, LinearAlgebra) && return true
-    return false
-end
-
-
-function is_special_primitive(f)
-    return (
-        f === Base.Generator
-    )
-end
-
-
-
-"""
-    is_primitive(f, args...)
-
-The default implementation of `isprimitive` argument in [`trace()`](@ref).
-Returns `true` if the method with the provided signature is defined
-in one of the Julia's built-in modules, e.g. `Base`, `Core`, `Broadcast`, etc.
-"""
-function isprimitive(f, args...)
-    f in (__new__, Colon(), Base.Generator) && return true
-    f isa NamedTuple && return true
-    f isa DataType && return false   # usually we want to recurse to constructors
-    modl = parentmodule(f)
-    modl in (Base, Core, Core.Intrinsics, Broadcast, Statistics, LinearAlgebra) && return true
-    return false
-end
-
-
-"""
-    record_primitive!(tape::Tape, v_fargs...)
-
-Record a primitive function call to the tape.
-
-By default, this function simply pushes the function call to the tape,
-but it can also be overwritten to do more complex logic. For example,
-instead of recording the function call, a user can push one or more
-other calls, essentially implementing `replace!()` right during the
-tracing and without calling the function twice.
-
-Examples:
-=========
-
-The following code shows how to replace f(args...) with ChainRules.rrule(f, args...)
-duing the tracing:
-
-    function record_primitive!(tape::Tape{RRuleContext}, v_fargs)
-        v_rr = push!(tape, mkcall(rrule, v_fargs...))
-        v_val = push!(tape, mkcall(getfield, v_rr, 1))
-        v_pb = push!(tape, mkcall(getfield, v_rr, 1))
-        tape.c.pullbacks[v_val] = v_pb
-        return v_val   # the function should return Variable with the result
-    end
-"""
-record_primitive!(tape::Tape, v_fargs...) = push_call!(tape, v_fargs...)
-
-
 function trace!(t::Tracer, ci::CodeInfo, v_fargs...)
     frame = Frame(t.tape, v_fargs...)
     i = 1
@@ -189,7 +212,7 @@ function trace!(t::Tracer, ci::CodeInfo, v_fargs...)
             ex = Meta.isexpr(st, :(=)) ? st.args[2] : st
             vs = resolve_tape_vars(frame, ex.args...)
             fvals = [v isa V ? t.tape[v].val : v for v in vs]
-            v = if t.isprimitive(fvals...)
+            v = if isprimitive(t.tape.c, fvals...)
                 record_primitive!(t.tape, vs...)
             else
                 trace!(t, get_code_info(fvals[1], fvals[2:end]...), vs...)
@@ -249,18 +272,22 @@ end
 
 
 """
-    trace(f, args...; ctx=Dict(), isprimitive=isprimitive)
+    trace(f, args...; ctx=BaseCtx())
 
 Trace function call, return the result and the corresponding Tape.
 `trace` records to the tape primitive methods and recursively dives into
 non-primitives.
 
-Keyword arguments:
-==================
+Tracing can be customized using a context and the following methods:
 
-* isprimitive - function that decides whether a particular call should be treated
-    as a primitive. Default: Umlaut.isprimitive(f, args...).
-* ctx - context to attach to the Tape. Default: Dict().
+* isprimitive(ctx, f, args...) - decides whethere `f(args...)` should be
+  treated as a primitive.
+* record_primitive!(tape::Tape{C}, v_f, v_args...) - records the primitive
+  call defined by variables `f_v(v_args...)` to the tape.
+
+The default context is `BaseCtx()`, which treats all functions from standard
+Julia modules as primitives and simply pushes the call to the tape. See the
+docstrings of these functions for further examples of customization.
 
 Examples:
 =========
@@ -276,8 +303,7 @@ Examples:
     #   %4 = +(%3, 1)::Float64
     # )
 
-    custom_isprimitive(f, args...) = isprimitive(f, args...) || f in [foo]
-    val, tape = trace(bar, 2.0; isprimitive=custom_isprimitive)
+    val, tape = trace(bar, 2.0; ctx=BaseCtx([*, +, foo]))
     # (5.0, Tape{Dict{Any, Any}}
     #   inp %1::typeof(bar)
     #   inp %2::Float64
@@ -285,6 +311,16 @@ Examples:
     #   %4 = +(%3, 1)::Float64
     # )
 
+    struct MyCtx end
+
+    isprimitive(ctx::MyCtx, f, args...) = isprimitive(BaseCtx(), f, args...) || f in [foo]
+    val, tape = trace(bar, 2.0; ctx=MyCtx())
+    # (5.0, Tape{Dict{Any, Any}}
+    #   inp %1::typeof(bar)
+    #   inp %2::Float64
+    #   %3 = foo(%2)::Float64
+    #   %4 = +(%3, 1)::Float64
+    # )
 """
 function trace(f, args...; ctx=Dict(), isprimitive=isprimitive, deprecated_kws...)
     # primitives = ensure_function_resolver(primitives)
@@ -296,7 +332,7 @@ function trace(f, args...; ctx=Dict(), isprimitive=isprimitive, deprecated_kws..
     meth = which(f, map(typeof, args))
     # xargs are here to support vararg inputs
     xargs = meth.isva ? (args[1:meth.nargs - 2]..., args[meth.nargs - 1:end]) : args
-    t = Tracer(Tape(ctx), isprimitive)
+    t = Tracer(Tape(ctx))
     t.tape.meta[:isva] = meth.isva
     v_fn = push!(t.tape, Input(f))
     v_args = [push!(t.tape, Input(a)) for a in xargs]
