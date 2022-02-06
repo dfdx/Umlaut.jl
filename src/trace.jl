@@ -1,5 +1,3 @@
-import Ghost: promote_const_value, __new__
-
 # Naming:
 # v_xxx - Variable xxx
 # sv_xxx - SSAValue xxx or SlotNumber xxx

@@ -288,8 +288,6 @@ end
 # end
 
 
-# TODO: add these tests to Ghost.jl as well
-
 function pow(x, n)
     r = 1
     for i=1:n

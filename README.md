@@ -4,6 +4,8 @@
   <img height="300" src="https://github.com/dfdx/Umlaut.jl/blob/main/docs/src/logo.png">
 </p>
 
+[![](https://img.shields.io/badge/docs-dev-blue.svg)](https://dfdx.github.io/Umlaut.jl/dev)
+[![Test](https://github.com/dfdx/Umlaut.jl/actions/workflows/test.yml/badge.svg)](https://github.com/dfdx/Umlaut.jl/actions/workflows/test.yml)
 
 Umlaut is a new experimental code tracer for [Ghost.jl](https://github.com/dfdx/Ghost.jl). The main goals of Umlaut are:
 
