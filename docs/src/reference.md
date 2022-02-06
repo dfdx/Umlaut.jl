@@ -1,5 +1,5 @@
 ```@meta
-CurrentModule = Ghost
+CurrentModule = Umlaut
 ```
 
 ## Public API
@@ -63,7 +63,7 @@ should_trace_loops
 
 ## Internal API
 
-The following types and functions might be useful for better understanding of Ghost behavior, but are not part of the public API and may not hold backward compatibility guarantees.
+The following types and functions might be useful for better understanding of Umlaut behavior, but are not part of the public API and may not hold backward compatibility guarantees.
 
 ```@docs
 FunctionResolver

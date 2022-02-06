@@ -1,10 +1,13 @@
-# Ghost.jl
+# Umlaut.jl
 
-Ghost.jl is a code tracer for the Julia programming language. It lets you trace the function execution, recording all primitive operations onto a linearized tape. Here's a quick example:
+> :warning: These docs are taken from Ghost.jl and will be updated to Umlaut.jl soon!
+
+
+Umlaut.jl is a code tracer for the Julia programming language. It lets you trace the function execution, recording all primitive operations onto a linearized tape. Here's a quick example:
 
 
 ```@example
-using Ghost     # hide
+using Umlaut     # hide
 inc(x) = x + 1
 mul(x, y) = x * y
 inc_double(x) = mul(inc(x), inc(x))

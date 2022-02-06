@@ -16,7 +16,7 @@ foo(x) = 2x                # hide
 bar(x, y) = foo(x) + 3y    # hide
 baz(x, y) = bar(x, y) - 1  # hide
 
-using Ghost
+using Umlaut
 
 val, tape = trace(baz, 1.0, 2.0)
 ```
@@ -33,40 +33,40 @@ foo(x) = 2x                # hide
 bar(x, y) = foo(x) + 3y    # hide
 baz(x, y) = bar(x, y) - 1  # hide
 
-using Ghost                # hide
+using Umlaut                # hide
 
 val, tape = trace(baz, 1.0, 2.0; primitives=Set([+, -, *, foo]))
 ```
 
-The default behavior is defined by [`Ghost.is_primitive`](@ref) function and can be extended e.g. like this:
+The default behavior is defined by [`Umlaut.is_primitive`](@ref) function and can be extended e.g. like this:
 
 ```@example
 foo(x) = 2x                # hide
 bar(x, y) = foo(x) + 3y    # hide
 baz(x, y) = bar(x, y) - 1  # hide
 
-using Ghost                # hide
+using Umlaut                # hide
 
 
 function custom_is_primitive(sig)
-    return Ghost.is_primitive(sig) || sig == Tuple{typeof(foo), Float64}
+    return Umlaut.is_primitive(sig) || sig == Tuple{typeof(foo), Float64}
 end
 
 val, tape = trace(baz, 1.0, 2.0; is_primitive=custom_is_primitive)
 ```
 
-An easy way to get a valid call signature is to use [`Ghost.call_signature`](@ref).
+An easy way to get a valid call signature is to use [`Umlaut.call_signature`](@ref).
 
-See also [`Ghost.FunctionResolver`](@ref) for better understanding of the implementation of `is_primitive`.
+See also [`Umlaut.FunctionResolver`](@ref) for better understanding of the implementation of `is_primitive`.
 
-In complex scenarios it may be useful to bring additional application-specific data together with a tape. For this purpose [`Tape`](@ref Ghost.Tape) is parametrized by a context type which is `Dict{Any, Any}` by default, but can be anything. A context object can be attached during tracing using the `ctx` keyword:
+In complex scenarios it may be useful to bring additional application-specific data together with a tape. For this purpose [`Tape`](@ref Umlaut.Tape) is parametrized by a context type which is `Dict{Any, Any}` by default, but can be anything. A context object can be attached during tracing using the `ctx` keyword:
 
 ```@example
 foo(x) = 2x                # hide
 bar(x, y) = foo(x) + 3y    # hide
 baz(x, y) = bar(x, y) - 1  # hide
 
-using Ghost                # hide
+using Umlaut                # hide
 
 mutable struct MyCtx
     a

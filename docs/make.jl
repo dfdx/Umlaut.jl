@@ -1,10 +1,10 @@
 using Documenter
-using Ghost
+using Umlaut
 
 makedocs(
-    sitename = "Ghost",
+    sitename = "Umlaut",
     format = Documenter.HTML(),
-    modules = [Ghost],
+    modules = [Umlaut],
     pages = [
         "Main" => "index.md",
         "Linearized traces" => "trace.md",
@@ -15,6 +15,6 @@ makedocs(
 )
 
 deploydocs(
-    repo = "github.com/dfdx/Ghost.jl.git",
+    repo = "github.com/dfdx/Umlaut.jl.git",
     devbranch = "main",
 )
