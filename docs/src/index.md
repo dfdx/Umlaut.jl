@@ -13,7 +13,8 @@ val, tape = trace(inc_double, 2.0)
 ```
 The tape can then be analyzed, modified and even compiled back to a normal function. See the following sections for details.
 
-> :exclamation: Umlaut.jl was started as a fork of Ghost.jl trying to overcome some of its
-> limitations, but eventually the codebase has diverged so much that the new package was born.
-> Although the two have pretty similar API, there are several notable differences. See
-> [#Differences from Ghost](@ghost) for details.
+!!! note
+
+    Umlaut.jl was started as a fork of Ghost.jl trying to overcome some of its
+    limitations, but eventually the codebase has diverged so much that the new package was born. Although the two have pretty similar API, there are several notable differences.
+    See [Migration from Ghost](@ref) for details.

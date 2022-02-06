@@ -9,6 +9,7 @@ export
     Call,
     bound,
     inputs,
+    inputs!,
     mkcall,
     play!,
     compile

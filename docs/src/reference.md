@@ -8,8 +8,9 @@ CurrentModule = Umlaut
 
 ```@docs
 trace
-is_primitive
-call_signature
+isprimitive
+record_primitive!
+BaseCtx
 __new__
 ```
 
@@ -52,30 +53,6 @@ primitivize!
 play!
 compile
 to_expr
-```
-
-### Loops
-
-```@docs
-should_trace_loops!
-should_trace_loops
-```
-
-## Internal API
-
-The following types and functions might be useful for better understanding of Umlaut behavior, but are not part of the public API and may not hold backward compatibility guarantees.
-
-```@docs
-FunctionResolver
-Frame
-TracerOptions
-_LoopEnd
-record_or_recurse!
-push_frame!
-pop_frame!
-enter_loop!
-stop_loop_tracing!
-exit_loop!
 ```
 
 ## Index

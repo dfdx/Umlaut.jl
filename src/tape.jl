@@ -39,6 +39,8 @@ function Base.getproperty(v::Variable, p::Symbol)
             # free variable with only ID
             return v._id
         end
+    elseif p == :op
+        return v._op
     else
         return getfield(v, p)
     end
@@ -67,6 +69,8 @@ function Base.:(==)(v1::Variable, v2::Variable)
 end
 
 function Base.hash(v::Variable, h::UInt)
+    # note that the hash is calculated only once and stored as a field
+    # this way we can safely put variables into a Dict
     if isnothing(v._hash)
         h = hash(v.id, hash(v._op, h))
         v._hash = h
@@ -164,13 +168,18 @@ end
 
 
 """
-    mkcall(fn, args...; val=missing)
+    mkcall(fn, args...; val=missing, kwargs...)
 
 Convenient constructor for Call operation. If val is `missing` (default)
 and call value can be calculated from (bound) variables and constants,
 they are calculated. To prevent this behavior, set val to some neutral value.
 """
-function mkcall(fn, args...; val=missing)
+function mkcall(fn, args...; val=missing, kwargs...)
+    kwargs = NamedTuple(kwargs)
+    if !isempty(kwargs)
+        args = (kwargs, fn, args...)
+        fn = Core.kwfunc(fn)
+    end
     fargs = (fn, args...)
     calculable = all(
         a -> !isa(a, Variable) ||                      # not variable
@@ -592,7 +601,7 @@ end
 
 
 """
-    primitivize!(tape::Tape; is_primitive=is_primitive)
+    primitivize!(tape::Tape; ctx=nothing)
 
 Trace non-primitive function calls on a tape and decompose them
 into a list of corresponding primitive calls.
@@ -612,18 +621,18 @@ into a list of corresponding primitive calls.
 
     # output
 
-    Tape{Dict{Any, Any}}
+    Tape{BaseCtx}
       inp %1::typeof(g)
       inp %2::Float64
       %3 = *(2, %2)::Float64
       %4 = -(%3, 1)::Float64
       %5 = +(%4, 5)::Float64
 """
-function primitivize!(tape::Tape, op::AbstractOp)
+function primitivize!(tape::Tape, op::AbstractOp, ctx)
     id = op.id
     fn = op.fn isa V ? tape[op.fn].val : op.fn
     args = map_vars(a -> tape[a].val, op.args)
-    _, sub = trace(fn, args...)
+    _, sub = trace(fn, args...; ctx=ctx)
 
     new_ops = sub.ops[length(inputs(sub))+1:end]
     old_new = Dict{Int, Int}()
@@ -638,14 +647,19 @@ function primitivize!(tape::Tape, op::AbstractOp)
 end
 
 
-function primitivize!(tape::Tape; is_primitive=is_primitive)
+function primitivize!(tape::Tape{C}; ctx=nothing) where C
+    ctx = ctx === nothing ? tape.c : ctx
     # note: referencing concrete operations on the original tape
     # they will stay the same even when we modify the tape
     vars = [V(op) for op in tape]
     for v in vars
         op = tape[v]
-        if op isa Call && !is_primitive(call_signature(tape, op))
-            primitivize!(tape, op)
+        if op isa Call
+            fn = op.fn isa V ? tape[op.fn].val : op.fn
+            args = map_vars(a -> tape[a].val, op.args)
+            if !isprimitive(ctx, fn, args...)
+                primitivize!(tape, op, ctx)
+            end
         end
     end
 end

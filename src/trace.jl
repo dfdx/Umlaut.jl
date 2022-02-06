@@ -134,7 +134,7 @@ duing the tracing:
 
 See also: [`isprimitive()`](@ref)
 """
-record_primitive!(tape::Tape, v_fargs...) = push_call!(tape, v_fargs...)
+record_primitive!(tape::Tape, v_fargs...) = push!(tape, mkcall(v_fargs...))
 
 
 ###############################################################################
@@ -168,23 +168,6 @@ function get_code_info2(f, args...)
     m = first(mis).def
     ci = Base.uncompressed_ir(m)
     return ci
-end
-
-
-"""
-    push_call!(tape::Tape, fn, args...; kwargs)
-
-Shortcut for `push!(tape, mkcall(fn, args..))` also handling
-keyword arguments and respecting `ONNXCtx.exec` setting.
-"""
-function push_call!(tape::Tape, fn, args...; kwargs...)
-    kwargs = NamedTuple(kwargs)
-    if !isempty(kwargs)
-        args = (kwargs, fn, args...)
-        fn = Core.kwfunc(fn)
-    end
-    op = mkcall(fn, args...)
-    return push!(tape, op)
 end
 
 
@@ -320,7 +303,7 @@ Examples:
     #   %4 = +(%3, 1)::Float64
     # )
 """
-function trace(f, args...; ctx=Dict(), deprecated_kws...)
+function trace(f, args...; ctx=BaseCtx(), deprecated_kws...)
     warn_deprecated_keywords(deprecated_kws)
     ci = get_code_info(f, args...)
     meth = which(f, map(typeof, args))
