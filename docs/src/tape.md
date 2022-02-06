@@ -181,9 +181,9 @@ foo2(foo, 3.0)   # note: providing the original `foo` as the 1st argument
 It's possible to see what exactly is being compiled using [`to_expr`](@ref) function.
 
 
-## Tape context
+## Context (again)
 
-[`Tape`](@ref) is parametrized by a context type. Context is a way to pass arbitrary data with a tape. For instance, imagine that you are working on a DSL engine which traces function execution and enriches the resulting tape with domain-specific operations. You also want to keep track of all added operations, but don't want to pass around an additional object holding them. You can attach a custom context to the tape and reference it as `tape.c`:
+We have already discussed contexts as a way to customize tracing in the [Linearized traces](@ref) section, but here we need to emphasize context's role as a storage. Context is attached to a [`Tape`](@ref) and can be accessed throughout its lifetime. For instance, imagine that you are working on a DSL engine which traces function execution and enriches the resulting tape with domain-specific operations. You also want to keep track of all added operations, but don't want to pass around an additional object holding them. You can attach a custom context to the tape and reference it as `tape.c`:
 
 ```julia
 using Umlaut

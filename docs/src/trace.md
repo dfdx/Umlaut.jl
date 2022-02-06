@@ -1,3 +1,7 @@
+```@meta
+CurrentModule = Umlaut
+```
+
 # Linearized traces
 
 Usually, programs are executed as a sequence of nested function calls, e.g.:
@@ -21,12 +25,11 @@ using Umlaut
 val, tape = trace(baz, 1.0, 2.0)
 ```
 
-[`trace()`](@ref) returns two values - the result of the original function call and the generated tape. The structure of the tape is described in [Tape anatomy](@ref) section, here just note that [`trace()`](@ref) recursed into `baz()`, `bar()` and `foo()`, but recorded `+`, `-` and `*` onto the tape as is. This is because `+`, `-` and `*` are considered "primitives", i.e. the most basic operations which all other functions consist of. This behavior can be customized using one of the two keyword arguments:
+[`trace()`](@ref) returns two values - the result of the original function call and the generated tape. The structure of the tape is described in [Tape anatomy](@ref) section, here just note that [`trace()`](@ref) recursed into `baz()`, `bar()` and `foo()`, but recorded `+`, `-` and `*` onto the tape as is. This is because `+`, `-` and `*` are considered "primitives", i.e. the most basic operations which all other functions consist of. This behavior can be customized using a tracing context.
 
-* `primitives` - an iterable of functions to be considered primitive
-* `is_primitive(sig)` - a function which takes a method call signature and returns `true` if this method must be considered primitive and `false` otherwise
+## Context
 
-Here's an example:
+Context is a way to **customize tracing** and **attach arbitrary data** to the generated tape. For example, here's how we can add a new function to the list of primitives:
 
 ```@example
 foo(x) = 2x                # hide
@@ -34,11 +37,34 @@ bar(x, y) = foo(x) + 3y    # hide
 baz(x, y) = bar(x, y) - 1  # hide
 
 using Umlaut                # hide
+import Umlaut: isprimitive, BaseCtx
 
-val, tape = trace(baz, 1.0, 2.0; primitives=Set([+, -, *, foo]))
+struct MyCtx end
+
+isprimitive(::MyCtx, f, args...) = isprimitive(BaseCtx(), f, args...) || f == foo
+
+val, tape = trace(baz, 1.0, 2.0; ctx=MyCtx())
 ```
 
-The default behavior is defined by [`Umlaut.is_primitive`](@ref) function and can be extended e.g. like this:
+In this code:
+
+* `MyCtx` is a new context type; there are no restrictions on the type of context
+* [`isprimitive`](@ref) is a function that decides whether a particular function call
+  `f(args...)` should be treated as a primitive in this context
+* [`BaseCtx`](@ref) is the default context that treats all built-in functions from
+  modules `Base`, `Core`, etc. as primitives
+
+So we define a new method for [`isprimitive()`](@ref) that returns `true` for all built-in functions and for function `foo`.
+
+[`isprimitive()`](@ref) can be artibtrarily complex. For example, if we want to include
+all functions from a particular module, we can write:
+
+```julia
+isprimitive(::MyCtx, f, args...) = Base.parentmodule(f) == Main
+```
+
+On the other hand, if we only need to set a few functions as primitives,
+[`BaseCtx()`](@ref) provides a convenient constructor for it:
 
 ```@example
 foo(x) = 2x                # hide
@@ -46,34 +72,52 @@ bar(x, y) = foo(x) + 3y    # hide
 baz(x, y) = bar(x, y) - 1  # hide
 
 using Umlaut                # hide
+import Umlaut: isprimitive, BaseCtx  # hide
+
+val, tape = trace(baz, 1.0, 2.0; ctx=BaseCtx([+, -, *, foo]))
+```
+
+Another useful function is [`record_primitive!()`](@ref), which lets you overload the way
+a primitive call is recorded to the tape. As a toy example, imagine that we want to replace
+all invokations of `*` with `+` and calculate the number of times it has been called.
+Even though we haven't learned tape anatomy and utils yet, try to parse this code:
 
 
-function custom_is_primitive(sig)
-    return Umlaut.is_primitive(sig) || sig == Tuple{typeof(foo), Float64}
+```@example
+using Umlaut     # hide
+import Umlaut: record_primitive!
+
+function loop1(a, n)
+    a = 2a
+    for i in 1:n
+        a = a * n
+    end
+    return a
 end
 
-val, tape = trace(baz, 1.0, 2.0; is_primitive=custom_is_primitive)
-```
-
-An easy way to get a valid call signature is to use [`Umlaut.call_signature`](@ref).
-
-See also [`Umlaut.FunctionResolver`](@ref) for better understanding of the implementation of `is_primitive`.
-
-In complex scenarios it may be useful to bring additional application-specific data together with a tape. For this purpose [`Tape`](@ref Umlaut.Tape) is parametrized by a context type which is `Dict{Any, Any}` by default, but can be anything. A context object can be attached during tracing using the `ctx` keyword:
-
-```@example
-foo(x) = 2x                # hide
-bar(x, y) = foo(x) + 3y    # hide
-baz(x, y) = bar(x, y) - 1  # hide
-
-using Umlaut                # hide
-
-mutable struct MyCtx
-    a
-    b
+mutable struct CountingReplacingCtx
+    replace::Pair
+    count::Int
 end
 
-val, tape = trace(baz, 1.0, 2.0; ctx=MyCtx(0, 0))
+# v_fargs is a tuple of Variables or constant values, representing a function call
+# that we are about to invoke (but haven't yet)
+function record_primitive!(tape::Tape{CountingReplacingCtx}, v_fargs...)
+    # tape.c refers to the provided context
+    if v_fargs[1] == tape.c.replace[1]
+        tape.c.count += 1
+        return push!(tape, mkcall(tape.c.replace[2], v_fargs[2:end]...))
+    else
+        return push!(tape, mkcall(v_fargs...))
+    end
+end
+
+
+_, tape = trace(loop1, 2.0, 3; ctx=CountingReplacingCtx((*) => (+), 0))
+@assert tape.c.count == 4
+@assert count(op -> op isa Call && op.fn == (+), tape) == 4
 ```
 
-The presense of the context doesn't affect tracing, but can be used during further tape processing. See [Tape context](@ref) for more details.
+Although we could have done it as a postprocessing using [`replace!()`](@ref),
+[`record_primitive!()`](@ref) has advantage of running _before_ the original function
+is invoked and thus avoiding double calculation.

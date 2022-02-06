@@ -10,7 +10,7 @@ makedocs(
         "Linearized traces" => "trace.md",
         "Tape anatomy" => "tape.md",
         "Loops" => "loops.md",
-        "Differences from Ghost" => "ghost.md",
+        "Migration from Ghost" => "ghost.md",
         "Reference" => "reference.md",
     ],
 )
