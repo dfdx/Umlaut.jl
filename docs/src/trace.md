@@ -4,6 +4,8 @@ CurrentModule = Umlaut
 
 # Linearized traces
 
+## Tracing
+
 Usually, programs are executed as a sequence of nested function calls, e.g.:
 
 ```@example
