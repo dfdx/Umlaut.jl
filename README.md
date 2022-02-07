@@ -17,3 +17,8 @@ At the moment Umlaut completely replicates static tracer interface in Ghost and 
 
 Note that right now Umlaut is highly experimental, and in general you should use Ghost instead.
 
+!!! note
+
+    Umlaut.jl was started as a fork of Ghost.jl trying to overcome some of its
+    limitations, but eventually the codebase has diverged so much that the new package was born. Although the two have pretty similar API, there are several notable differences.
+    See [Migration from Ghost](@ref) for details.
