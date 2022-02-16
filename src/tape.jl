@@ -230,11 +230,18 @@ Tape(c::C) where C = Tape(AbstractOp[], Variable(0), nothing, Dict(), c)
 # by default context is just a Dict{Any, Any}
 Tape() = Tape(Dict{Any,Any}())
 
+const SHOW_FORMAT = Ref(:plain)
+show_format!(val) = (SHOW_FORMAT[] = val)
+
 
 function Base.show(io::IO, tape::Tape{C}) where C
-    println(io, "Tape{$C}")
-    for op in tape.ops
-        println(io, "  $op")
+    if SHOW_FORMAT[] == :compact
+        show_compact(io, tape)
+    else
+        println(io, "Tape{$C}")
+        for op in tape.ops
+            println(io, "  $op")
+        end
     end
 end
 
