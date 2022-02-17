@@ -88,7 +88,7 @@ function isprimitive(ctx::BaseCtx, f, args...)
         f in (__new__, Colon(), Base.Generator) && return true
         f isa NamedTuple && return true
         f isa DataType && return false   # usually we want to recurse to constructors
-        modl = parentmodule(f)
+        modl = parentmodule(typeof(f))
         modl in (Base, Core, Core.Intrinsics, Broadcast, Statistics, LinearAlgebra) && return true
         return false
     else
