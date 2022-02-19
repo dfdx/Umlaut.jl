@@ -17,6 +17,8 @@ Variables (also aliesed as `V`) can be:
 * free, created as `V(id)` - used for indexing into tape
 * bound, created as `V(op)`` - used to keep a robust reference
   to an operation on the tape
+
+See also: [`bound``](@ref)
 """
 mutable struct Variable
     _id::Union{<:Integer,Nothing}
@@ -434,8 +436,24 @@ end
 #                                 REBIND                                      #
 ###############################################################################
 
-"""Returned version of the var bound to the tape op"""
+"""
+    bound(tape::Tape, v::Variable)
+    %(tape::Tape, i::Integer)
+
+Create version of the var bound to an operation on the tape.
+The short syntax `tape %i` is convenient for working in REPL,
+but may surprise a reader of your code. Use it wisely.
+
+Examples:
+=========
+
+    V(3)                # unbound var
+    bound(tape, 3)      # bound var
+    bound(tape, V(3))   # bound var
+    tape %3             # bound var
+"""
 bound(tape::Tape, v::Variable) = Variable(tape[v])
+Base.:%(tape::Tape, i::Integer) = Variable(tape[V(i)])
 
 
 """
