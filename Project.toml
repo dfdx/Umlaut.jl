@@ -1,7 +1,7 @@
 name = "Umlaut"
 uuid = "92992a2b-8ce5-4a9c-bb9d-58be9a7dc841"
 authors = ["Andrei Zhabinski <andrei.zhabinski@gmail.com>"]
-version = "0.2.2"
+version = "0.2.3"
 
 [deps]
 Documenter = "e30172f5-a6a5-5a46-863b-614d45cd2de4"

@@ -142,19 +142,24 @@ record_primitive!(tape::Tape, v_fargs...) = push!(tape, mkcall(v_fargs...))
 ###############################################################################
 
 
-mutable struct Tracer
-    tape::Tape
+mutable struct Tracer{C}
+    tape::Tape{C}
 end
 
 
-function get_code_info(f, args...)
-    types = map(typeof, args)
+function code_info_of(f, types...)
     cis = code_lowered(f, types)
     if isempty(cis)
         arg_type_str = join(types, ", ")
         error("Cannot get CodeInfo for $f($arg_type_str)")
     end
     return cis[1]
+end
+
+
+function get_code_info(f, args...)
+    types = map(typeof, args)
+    return code_info_of(f, types...)
 end
 
 
@@ -181,23 +186,35 @@ end
 rewrite_special_cases(st) = st
 
 
+"""
+    record_or_recurse!(t::Tracer{C}, v_f, v_args...) where C
+
+Customizable handler that controls what to do with a function call.
+The default implementation checks if the call is a primitive and either
+records it to the tape or recurses into it.
+"""
+function record_or_recurse!(t::Tracer{C}, vs...) where C
+    fvals = [v isa V ? t.tape[v].val : v for v in vs]
+    return if isprimitive(t.tape.c, fvals...)
+        record_primitive!(t.tape, vs...)
+    else
+        trace!(t, get_code_info(fvals[1], fvals[2:end]...), vs...)
+    end
+end
+
+
 function trace!(t::Tracer, ci::CodeInfo, v_fargs...)
     frame = Frame(t.tape, v_fargs...)
     i = 1
     while i <= length(ci.code)
         st = rewrite_special_cases(ci.code[i])
-        global STATE = (t, ci, v_fargs, frame, i, st)
+        # global STATE = (t, ci, v_fargs, frame, i, st)
         if Meta.isexpr(st, :call) || (Meta.isexpr(st, :(=)) && Meta.isexpr(st.args[2], :call))
             # function call
             sv = SSAValue(i)
             ex = Meta.isexpr(st, :(=)) ? st.args[2] : st
             vs = resolve_tape_vars(frame, ex.args...)
-            fvals = [v isa V ? t.tape[v].val : v for v in vs]
-            v = if isprimitive(t.tape.c, fvals...)
-                record_primitive!(t.tape, vs...)
-            else
-                trace!(t, get_code_info(fvals[1], fvals[2:end]...), vs...)
-            end
+            v = record_or_recurse!(t, vs...)
             frame.ir2tape[sv] = v
             if Meta.isexpr(st, :(=))
                 # update mapping for slot
