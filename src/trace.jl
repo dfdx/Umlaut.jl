@@ -147,7 +147,7 @@ mutable struct Tracer{C}
 end
 
 
-function getcode_t(f, types...)
+function getcode(f, types)
     cis = code_lowered(f, types)
     if isempty(cis)
         arg_type_str = join(types, ", ")
@@ -156,11 +156,6 @@ function getcode_t(f, types...)
     return cis[1]
 end
 
-
-function getcode(ctx, f, args...)
-    types = map(typeof, args)
-    return getcode_t(f, types...)
-end
 
 
 # function get_code_info2(f, args...)
@@ -198,7 +193,7 @@ function record_or_recurse!(t::Tracer{C}, vs...) where C
     return if isprimitive(t.tape.c, fvals...)
         record_primitive!(t.tape, vs...)
     else
-        trace!(t, getcode(t.tape.c, fvals[1], fvals[2:end]...), vs...)
+        trace!(t, getcode(fvals[1], map(typeof, fvals[2:end])), vs...)
     end
 end
 
@@ -269,6 +264,21 @@ function trace!(t::Tracer, ci::CodeInfo, v_fargs...)
 end
 
 
+function trace(ctx, ci::CodeInfo, f, args...; isva=false)
+    t = Tracer(Tape(ctx))
+    t.tape.meta[:isva] = isva
+    xargs = isva ? (args[1:meth.nargs - 2]..., args[meth.nargs - 1:end]) : args
+    # v_fn = push!(t.tape, Input(f))
+    # v_args = [push!(t.tape, Input(a)) for a in xargs]
+    # v_fargs = [v_fn, v_args...]
+    v_fargs = inputs!(t.tape, f, xargs...)
+    rv = trace!(t, ci, v_fargs...)
+    t.tape.result = rv
+    return t.tape[t.tape.result].val, t.tape
+end
+
+
+
 """
     trace(f, args...; ctx=BaseCtx())
 
@@ -320,17 +330,17 @@ Examples:
     #   %4 = +(%3, 1)::Float64
     # )
 """
-function trace(f, args...; ctx=BaseCtx(), deprecated_kws...)
+function trace(f, args...; ctx=BaseCtx(), fargtypes=nothing, deprecated_kws...)
     warn_deprecated_keywords(deprecated_kws)
-    ci = getcode(ctx, f, args...)
-    meth = which(f, map(typeof, args))
-    # xargs are here to support vararg inputs
-    xargs = meth.isva ? (args[1:meth.nargs - 2]..., args[meth.nargs - 1:end]) : args
+    if isnothing(fargtypes)
+        fargtypes = (f, map(typeof, args))
+    end
     t = Tracer(Tape(ctx))
+    meth = which(fargtypes...)
+    xargs = meth.isva ? (args[1:meth.nargs - 2]..., args[meth.nargs - 1:end]) : args
     t.tape.meta[:isva] = meth.isva
-    v_fn = push!(t.tape, Input(f))
-    v_args = [push!(t.tape, Input(a)) for a in xargs]
-    v_fargs = [v_fn, v_args...]
+    v_fargs = inputs!(t.tape, f, xargs...)
+    ci = getcode(fargtypes...)
     rv = trace!(t, ci, v_fargs...)
     t.tape.result = rv
     return t.tape[t.tape.result].val, t.tape
