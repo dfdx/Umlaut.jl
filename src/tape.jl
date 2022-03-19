@@ -15,10 +15,10 @@ a specific operation on the tape.
 Variables (also aliesed as `V`) can be:
 
 * free, created as `V(id)` - used for indexing into tape
-* bound, created as `V(op)`` - used to keep a robust reference
-  to an operation on the tape
+* bound, created as `V(op)` or V(tape, id) - used to keep a robust
+  reference to an operation on the tape
 
-See also: [`bound``](@ref)
+See also: [`bound`](@ref)
 """
 mutable struct Variable
     _id::Union{<:Integer,Nothing}
@@ -232,6 +232,18 @@ Tape(c::C) where C = Tape(AbstractOp[], Variable(0), nothing, Dict(), c)
 # by default context is just a Dict{Any, Any}
 Tape() = Tape(Dict{Any,Any}())
 
+function Tape(
+        tape::Tape;
+        ops = tape.ops,
+        result = tape.result,
+        parent = tape.parent,
+        meta = tape.meta,
+        ctx = tape.c
+    )
+    return Tape(ops, result, parent, meta, ctx)
+end
+
+
 const SHOW_FORMAT = Ref(:plain)
 show_format!(val) = (SHOW_FORMAT[] = val)
 
@@ -438,6 +450,7 @@ end
 
 """
     bound(tape::Tape, v::Variable)
+    V(tape::Tape, v::Integer)
     %(tape::Tape, i::Integer)
 
 Create version of the var bound to an operation on the tape.
@@ -448,12 +461,14 @@ Examples:
 =========
 
     V(3)                # unbound var
+    V(tape, 3)          # bound var
     bound(tape, 3)      # bound var
     bound(tape, V(3))   # bound var
     tape %3             # bound var
 """
 bound(tape::Tape, v::Variable) = Variable(tape[v])
 Base.:%(tape::Tape, i::Integer) = Variable(tape[V(i)])
+Variable(tape::Tape, id::Integer) = bound(tape, V(id))
 
 
 """
