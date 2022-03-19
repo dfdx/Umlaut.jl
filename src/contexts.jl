@@ -11,6 +11,6 @@ function record_or_recurse!(t::Tracer{BcastCtx}, vs...)
         push!(t.tape, mkcall(broadcast, vs...))
     else
         types = map(eltype, fvals[2:end])
-        trace!(t, code_info_of(fvals[1], types...), vs...)
+        trace!(t, getcode_t(fvals[1], types...), vs...)
     end
 end

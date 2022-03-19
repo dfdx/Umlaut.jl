@@ -147,7 +147,7 @@ mutable struct Tracer{C}
 end
 
 
-function code_info_of(f, types...)
+function getcode_t(f, types...)
     cis = code_lowered(f, types)
     if isempty(cis)
         arg_type_str = join(types, ", ")
@@ -157,23 +157,23 @@ function code_info_of(f, types...)
 end
 
 
-function get_code_info(f, args...)
+function getcode(ctx, f, args...)
     types = map(typeof, args)
-    return code_info_of(f, types...)
+    return getcode_t(f, types...)
 end
 
 
-function get_code_info2(f, args...)
-    types = map(typeof, args)
-    mis = Base.method_instances(f, types)
-    if isempty(mis)
-        arg_type_str = join(types, ", ")
-        error("Cannot get CodeInfo for $f($arg_type_str)")
-    end
-    m = first(mis).def
-    ci = Base.uncompressed_ir(m)
-    return ci
-end
+# function get_code_info2(f, args...)
+#     types = map(typeof, args)
+#     mis = Base.method_instances(f, types)
+#     if isempty(mis)
+#         arg_type_str = join(types, ", ")
+#         error("Cannot get CodeInfo for $f($arg_type_str)")
+#     end
+#     m = first(mis).def
+#     ci = Base.uncompressed_ir(m)
+#     return ci
+# end
 
 
 function rewrite_special_cases(st::Expr)
@@ -198,7 +198,7 @@ function record_or_recurse!(t::Tracer{C}, vs...) where C
     return if isprimitive(t.tape.c, fvals...)
         record_primitive!(t.tape, vs...)
     else
-        trace!(t, get_code_info(fvals[1], fvals[2:end]...), vs...)
+        trace!(t, getcode(t.tape.c, fvals[1], fvals[2:end]...), vs...)
     end
 end
 
@@ -322,7 +322,7 @@ Examples:
 """
 function trace(f, args...; ctx=BaseCtx(), deprecated_kws...)
     warn_deprecated_keywords(deprecated_kws)
-    ci = get_code_info(f, args...)
+    ci = getcode(ctx, f, args...)
     meth = which(f, map(typeof, args))
     # xargs are here to support vararg inputs
     xargs = meth.isva ? (args[1:meth.nargs - 2]..., args[meth.nargs - 1:end]) : args
