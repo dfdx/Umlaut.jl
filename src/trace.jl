@@ -9,10 +9,13 @@
 mutable struct Frame
     # typically values are Variables, but can also be constant values
     ir2tape::Dict{Union{SSAValue, SlotNumber}, Any}
+    # debug info
+    ci::CodeInfo
+    v_fargs
 end
 
 
-function Frame(tape::Tape, v_fargs...)
+function Frame(tape::Tape, ci::CodeInfo, v_fargs...)
     ir2tape = Dict{Union{SSAValue, SlotNumber}, Any}()
     for (i, v) in enumerate(v_fargs)
         if v isa V
@@ -24,7 +27,7 @@ function Frame(tape::Tape, v_fargs...)
         end
 
     end
-    return Frame(ir2tape)
+    return Frame(ir2tape, ci, v_fargs)
 end
 
 function Base.show(io::IO, frame::Frame)
@@ -144,7 +147,10 @@ record_primitive!(tape::Tape, v_fargs...) = push!(tape, mkcall(v_fargs...))
 
 mutable struct Tracer{C}
     tape::Tape{C}
+    stack::Vector{Frame}
 end
+
+Tracer(tape::Tape{C}) where C = Tracer{C}(tape, [])
 
 
 function getcode(f, types)
@@ -155,20 +161,6 @@ function getcode(f, types)
     end
     return cis[1]
 end
-
-
-
-# function get_code_info2(f, args...)
-#     types = map(typeof, args)
-#     mis = Base.method_instances(f, types)
-#     if isempty(mis)
-#         arg_type_str = join(types, ", ")
-#         error("Cannot get CodeInfo for $f($arg_type_str)")
-#     end
-#     m = first(mis).def
-#     ci = Base.uncompressed_ir(m)
-#     return ci
-# end
 
 
 function rewrite_special_cases(st::Expr)
@@ -199,7 +191,8 @@ end
 
 
 function trace!(t::Tracer, ci::CodeInfo, v_fargs...)
-    frame = Frame(t.tape, v_fargs...)
+    frame = Frame(t.tape, ci, v_fargs...)
+    push!(t.stack, frame)
     i = 1
     while i <= length(ci.code)
         st = rewrite_special_cases(ci.code[i])
@@ -246,9 +239,12 @@ function trace!(t::Tracer, ci::CodeInfo, v_fargs...)
             sv = st.val
             if sv isa SSAValue || sv isa SlotNumber
                 val = frame.ir2tape[sv]
-                return val isa V ? val : push!(t.tape, Constant(promote_const_value(val)))
+                v = val isa V ? val : push!(t.tape, Constant(promote_const_value(val)))
+                pop!(t.stack)
+                return v
             else
                 v = push!(t.tape, Constant(promote_const_value(sv)))
+                pop!(t.stack)
                 return v
             end
         else
@@ -259,24 +255,14 @@ function trace!(t::Tracer, ci::CodeInfo, v_fargs...)
             # error("Unexpected statement type in CodeInfo: $st")
         end
     end
+    pop!(t.stack)
     # if no ReturnNode was encountered, use last op on the tape
     return V(t.tape[V(end)])
 end
 
 
-function trace(ctx, ci::CodeInfo, f, args...; isva=false)
-    t = Tracer(Tape(ctx))
-    t.tape.meta[:isva] = isva
-    xargs = isva ? (args[1:meth.nargs - 2]..., args[meth.nargs - 1:end]) : args
-    # v_fn = push!(t.tape, Input(f))
-    # v_args = [push!(t.tape, Input(a)) for a in xargs]
-    # v_fargs = [v_fn, v_args...]
-    v_fargs = inputs!(t.tape, f, xargs...)
-    rv = trace!(t, ci, v_fargs...)
-    t.tape.result = rv
-    return t.tape[t.tape.result].val, t.tape
-end
-
+const LATEST_TRACER = Ref{Tracer}()
+get_latest_tracer() = LATEST_TRACER[]
 
 
 """
@@ -341,7 +327,12 @@ function trace(f, args...; ctx=BaseCtx(), fargtypes=nothing, deprecated_kws...)
     t.tape.meta[:isva] = meth.isva
     v_fargs = inputs!(t.tape, f, xargs...)
     ci = getcode(fargtypes...)
-    rv = trace!(t, ci, v_fargs...)
-    t.tape.result = rv
-    return t.tape[t.tape.result].val, t.tape
+    try
+        rv = trace!(t, ci, v_fargs...)
+        t.tape.result = rv
+        return t.tape[t.tape.result].val, t.tape
+    catch
+        LATEST_TRACER[] = t
+        rethrow()
+    end
 end
