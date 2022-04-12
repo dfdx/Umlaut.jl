@@ -173,6 +173,14 @@ end
 rewrite_special_cases(st) = st
 
 
+function get_static_params(t::Tracer, v_fargs)
+    fvals = [v isa V ? t.tape[v].val : v for v in v_fargs]
+    fn, vals... = fvals
+    mi = Base.method_instances(fn, map(typeof, vals))[1]
+    return mi.sparam_vals
+end
+
+
 """
     record_or_recurse!(t::Tracer{C}, v_f, v_args...) where C
 
@@ -193,15 +201,16 @@ end
 function trace!(t::Tracer, ci::CodeInfo, v_fargs...)
     frame = Frame(t.tape, ci, v_fargs...)
     push!(t.stack, frame)
+    sparams = get_static_params(t, v_fargs)
     i = 1
     while i <= length(ci.code)
         st = rewrite_special_cases(ci.code[i])
-        # global STATE = (t, ci, v_fargs, frame, i, st)
         if Meta.isexpr(st, :call) || (Meta.isexpr(st, :(=)) && Meta.isexpr(st.args[2], :call))
             # function call
             sv = SSAValue(i)
             ex = Meta.isexpr(st, :(=)) ? st.args[2] : st
             vs = resolve_tape_vars(frame, ex.args...)
+            vs = [Meta.isexpr(x, :static_parameter) ? sparams[x.args[1]] : x for x in vs]
             v = record_or_recurse!(t, vs...)
             frame.ir2tape[sv] = v
             if Meta.isexpr(st, :(=))
@@ -262,7 +271,7 @@ end
 
 
 const LATEST_TRACER = Ref{Tracer}()
-get_latest_tracer() = LATEST_TRACER[]
+
 
 
 """
@@ -334,5 +343,29 @@ function trace(f, args...; ctx=BaseCtx(), fargtypes=nothing, deprecated_kws...)
     catch
         LATEST_TRACER[] = t
         rethrow()
+    end
+end
+
+
+###############################################################################
+#                           Post-tracing utils                                #
+###############################################################################
+
+
+get_latest_tracer() = LATEST_TRACER[]
+
+function get_latest_tracer_state()
+    t = get_latest_tracer()
+    frame = t.stack[end]
+    return t, frame.ci, frame.v_fargs
+end
+
+function print_stack_trace()
+    t = get_latest_tracer()
+    for (i, frame) in enumerate(reverse(t.stack))
+        fn, args... = [v isa V ? t.tape[v].val : v for v in frame.v_fargs]
+        meth = which(fn, map(typeof, args))
+        println("[$i] $meth")
+        # println("  @ $(meth.module) $(meth.file)")
     end
 end

@@ -122,6 +122,10 @@ constructor_loss(a) = (p = Point(a, a); p.x + p.y)
     @test tape[V(3)].val == Point
     @test tape[V(4)].fn == __new__
 
+    # Expr(:static_parameter, n)
+    val, tape = trace(sin, 2.0)
+    @test val == sin(2.0)
+    @test play!(tape, sin, 3.0) ≈ sin(3.0)
 end
 
 
