@@ -150,11 +150,11 @@ mutable struct Call{T} <: AbstractOp
 end
 Call(id, val, fn::T, args) where T = Call{T}(id, val, fn, args, nothing)
 
-pretty_type_name(T) = string(T)
+pretty_type_name(T) = sprint(show, T)
 pretty_type_name(T::Type{<:Broadcast.Broadcasted}) = "Broadcasted{}"
 
 function Base.show(io::IO, op::Call)
-    arg_str = join(["$v" for v in op.args], ", ")
+    arg_str = join([sprint(show, v) for v in op.args], ", ")
     typ_str = pretty_type_name(op.typ)
     print(io, "%$(op.id) = $(op.fn)($arg_str)::$typ_str")
 end
@@ -254,7 +254,7 @@ function Base.show(io::IO, tape::Tape{C}) where C
     else
         println(io, "Tape{$C}")
         for op in tape.ops
-            println(io, "  $op")
+            println(io, "  ", op)
         end
     end
 end
@@ -440,7 +440,7 @@ Loop(id, parent_inputs, condition, cont_vars, exit_vars, subtape, val) =
     Loop(id, parent_inputs, condition, cont_vars, exit_vars, subtape, val, nothing)
 
 function Base.show(io::IO, loop::Loop)
-    input_str = join(map(string, loop.parent_inputs), ", ")
+    input_str = join(map(s -> sprint(show, s), loop.parent_inputs), ", ")
     print(io, "%$(loop.id) = Loop($input_str)")
 end
 
