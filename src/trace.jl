@@ -72,7 +72,7 @@ BaseCtx(primitives) = BaseCtx(Set(primitives), Dict())
 function Base.show(io::IO, ctx::BaseCtx)
     n_primitives = length(ctx.primitives)
     n_entries = length(ctx.data)
-    print(io, "DefaultCtx($n_primitives primitives, $n_entries entries)")
+    print(io, "BaseCtx($n_primitives primitives, $n_entries entries)")
 end
 
 Base.getindex(ctx::BaseCtx, key) = getindex(ctx.data, key)
@@ -193,7 +193,14 @@ function record_or_recurse!(t::Tracer{C}, vs...) where C
     return if isprimitive(t.tape.c, fvals...)
         record_primitive!(t.tape, vs...)
     else
-        trace!(t, getcode(fvals[1], map(typeof, fvals[2:end])), vs...)
+        fargtypes = (fvals[1], map(typeof, fvals[2:end]))
+        meth = which(fargtypes...)
+        v_f, v_args... = vs
+        if meth.isva
+            va = push!(t.tape, mkcall(tuple, v_args[meth.nargs - 1:end]...))
+            v_args = (v_args[1:meth.nargs - 2]..., va)
+        end
+        trace!(t, getcode(fargtypes...), v_f, v_args...)
     end
 end
 

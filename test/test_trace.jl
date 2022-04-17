@@ -117,6 +117,10 @@ constructor_loss(a) = (p = Point(a, a); p.x + p.y)
     @test compile(tape)(vararg_fn, 4, 5, 6, 7) == vararg_fn(4, 5, 6, 7)
     @test compile(tape)(vararg_fn, 4, 5) == vararg_fn(4, 5)
 
+    vararg_wrapper = xs -> vararg_fn(xs...)
+    _, tape = trace(vararg_wrapper, (1, 2, 3))
+    @test play!(tape, vararg_wrapper, (4, 5, 6, 7)) == vararg_wrapper((4, 5, 6, 7))
+
     # constructors
     _, tape = trace(constructor_loss, 4.0)
     @test tape[V(3)].val == Point
