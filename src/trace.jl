@@ -176,7 +176,7 @@ rewrite_special_cases(st) = st
 function get_static_params(t::Tracer, v_fargs)
     fvals = [v isa V ? t.tape[v].val : v for v in v_fargs]
     fn, vals... = fvals
-    mi = Base.method_instances(fn, map(typeof, vals))[1]
+    mi = Base.method_instances(fn, map(Core.Typeof, vals))[1]
     return mi.sparam_vals
 end
 
@@ -193,7 +193,7 @@ function record_or_recurse!(t::Tracer{C}, vs...) where C
     return if isprimitive(t.tape.c, fvals...)
         record_primitive!(t.tape, vs...)
     else
-        fargtypes = (fvals[1], map(typeof, fvals[2:end]))
+        fargtypes = (fvals[1], map(Core.Typeof, fvals[2:end]))
         meth = which(fargtypes...)
         v_f, v_args... = vs
         if meth.isva
@@ -335,7 +335,7 @@ Examples:
 function trace(f, args...; ctx=BaseCtx(), fargtypes=nothing, deprecated_kws...)
     warn_deprecated_keywords(deprecated_kws)
     if isnothing(fargtypes)
-        fargtypes = (f, map(typeof, args))
+        fargtypes = (f, map(Core.Typeof, args))
     end
     t = Tracer(Tape(ctx))
     meth = which(fargtypes...)
@@ -371,7 +371,7 @@ function print_stack_trace()
     t = get_latest_tracer()
     for (i, frame) in enumerate(reverse(t.stack))
         fn, args... = [v isa V ? t.tape[v].val : v for v in frame.v_fargs]
-        meth = which(fn, map(typeof, args))
+        meth = which(fn, map(Core.Typeof, args))
         println("[$i] $meth")
         # println("  @ $(meth.module) $(meth.file)")
     end
