@@ -9,10 +9,13 @@
 mutable struct Frame
     # typically values are Variables, but can also be constant values
     ir2tape::Dict{Union{SSAValue, SlotNumber}, Any}
+    # debug info
+    ci::CodeInfo
+    v_fargs
 end
 
 
-function Frame(tape::Tape, v_fargs...)
+function Frame(tape::Tape, ci::CodeInfo, v_fargs...)
     ir2tape = Dict{Union{SSAValue, SlotNumber}, Any}()
     for (i, v) in enumerate(v_fargs)
         if v isa V
@@ -24,7 +27,7 @@ function Frame(tape::Tape, v_fargs...)
         end
 
     end
-    return Frame(ir2tape)
+    return Frame(ir2tape, ci, v_fargs)
 end
 
 function Base.show(io::IO, frame::Frame)
@@ -69,7 +72,7 @@ BaseCtx(primitives) = BaseCtx(Set(primitives), Dict())
 function Base.show(io::IO, ctx::BaseCtx)
     n_primitives = length(ctx.primitives)
     n_entries = length(ctx.data)
-    print(io, "DefaultCtx($n_primitives primitives, $n_entries entries)")
+    print(io, "BaseCtx($n_primitives primitives, $n_entries entries)")
 end
 
 Base.getindex(ctx::BaseCtx, key) = getindex(ctx.data, key)
@@ -144,7 +147,10 @@ record_primitive!(tape::Tape, v_fargs...) = push!(tape, mkcall(v_fargs...))
 
 mutable struct Tracer{C}
     tape::Tape{C}
+    stack::Vector{Frame}
 end
+
+Tracer(tape::Tape{C}) where C = Tracer{C}(tape, [])
 
 
 function getcode(f, types)
@@ -157,20 +163,6 @@ function getcode(f, types)
 end
 
 
-
-# function get_code_info2(f, args...)
-#     types = map(typeof, args)
-#     mis = Base.method_instances(f, types)
-#     if isempty(mis)
-#         arg_type_str = join(types, ", ")
-#         error("Cannot get CodeInfo for $f($arg_type_str)")
-#     end
-#     m = first(mis).def
-#     ci = Base.uncompressed_ir(m)
-#     return ci
-# end
-
-
 function rewrite_special_cases(st::Expr)
     ex = Meta.isexpr(st, :(=)) ? st.args[2] : st
     if Meta.isexpr(ex, :new)
@@ -179,6 +171,14 @@ function rewrite_special_cases(st::Expr)
     return Meta.isexpr(st, :(=)) ? Expr(:(=), st.args[1], ex) : ex
 end
 rewrite_special_cases(st) = st
+
+
+function get_static_params(t::Tracer, v_fargs)
+    fvals = [v isa V ? t.tape[v].val : v for v in v_fargs]
+    fn, vals... = fvals
+    mi = Base.method_instances(fn, map(Core.Typeof, vals))[1]
+    return mi.sparam_vals
+end
 
 
 """
@@ -193,22 +193,31 @@ function record_or_recurse!(t::Tracer{C}, vs...) where C
     return if isprimitive(t.tape.c, fvals...)
         record_primitive!(t.tape, vs...)
     else
-        trace!(t, getcode(fvals[1], map(typeof, fvals[2:end])), vs...)
+        fargtypes = (fvals[1], map(Core.Typeof, fvals[2:end]))
+        meth = which(fargtypes...)
+        v_f, v_args... = vs
+        if meth.isva
+            va = push!(t.tape, mkcall(tuple, v_args[meth.nargs - 1:end]...))
+            v_args = (v_args[1:meth.nargs - 2]..., va)
+        end
+        trace!(t, getcode(fargtypes...), v_f, v_args...)
     end
 end
 
 
 function trace!(t::Tracer, ci::CodeInfo, v_fargs...)
-    frame = Frame(t.tape, v_fargs...)
+    frame = Frame(t.tape, ci, v_fargs...)
+    push!(t.stack, frame)
+    sparams = get_static_params(t, v_fargs)
     i = 1
     while i <= length(ci.code)
         st = rewrite_special_cases(ci.code[i])
-        # global STATE = (t, ci, v_fargs, frame, i, st)
         if Meta.isexpr(st, :call) || (Meta.isexpr(st, :(=)) && Meta.isexpr(st.args[2], :call))
             # function call
             sv = SSAValue(i)
             ex = Meta.isexpr(st, :(=)) ? st.args[2] : st
             vs = resolve_tape_vars(frame, ex.args...)
+            vs = [Meta.isexpr(x, :static_parameter) ? sparams[x.args[1]] : x for x in vs]
             v = record_or_recurse!(t, vs...)
             frame.ir2tape[sv] = v
             if Meta.isexpr(st, :(=))
@@ -246,9 +255,12 @@ function trace!(t::Tracer, ci::CodeInfo, v_fargs...)
             sv = st.val
             if sv isa SSAValue || sv isa SlotNumber
                 val = frame.ir2tape[sv]
-                return val isa V ? val : push!(t.tape, Constant(promote_const_value(val)))
+                v = val isa V ? val : push!(t.tape, Constant(promote_const_value(val)))
+                pop!(t.stack)
+                return v
             else
                 v = push!(t.tape, Constant(promote_const_value(sv)))
+                pop!(t.stack)
                 return v
             end
         else
@@ -259,23 +271,13 @@ function trace!(t::Tracer, ci::CodeInfo, v_fargs...)
             # error("Unexpected statement type in CodeInfo: $st")
         end
     end
+    pop!(t.stack)
     # if no ReturnNode was encountered, use last op on the tape
     return V(t.tape[V(end)])
 end
 
 
-function trace(ctx, ci::CodeInfo, f, args...; isva=false)
-    t = Tracer(Tape(ctx))
-    t.tape.meta[:isva] = isva
-    xargs = isva ? (args[1:meth.nargs - 2]..., args[meth.nargs - 1:end]) : args
-    # v_fn = push!(t.tape, Input(f))
-    # v_args = [push!(t.tape, Input(a)) for a in xargs]
-    # v_fargs = [v_fn, v_args...]
-    v_fargs = inputs!(t.tape, f, xargs...)
-    rv = trace!(t, ci, v_fargs...)
-    t.tape.result = rv
-    return t.tape[t.tape.result].val, t.tape
-end
+const LATEST_TRACER = Ref{Tracer}()
 
 
 
@@ -333,7 +335,7 @@ Examples:
 function trace(f, args...; ctx=BaseCtx(), fargtypes=nothing, deprecated_kws...)
     warn_deprecated_keywords(deprecated_kws)
     if isnothing(fargtypes)
-        fargtypes = (f, map(typeof, args))
+        fargtypes = (f, map(Core.Typeof, args))
     end
     t = Tracer(Tape(ctx))
     meth = which(fargtypes...)
@@ -341,7 +343,36 @@ function trace(f, args...; ctx=BaseCtx(), fargtypes=nothing, deprecated_kws...)
     t.tape.meta[:isva] = meth.isva
     v_fargs = inputs!(t.tape, f, xargs...)
     ci = getcode(fargtypes...)
-    rv = trace!(t, ci, v_fargs...)
-    t.tape.result = rv
-    return t.tape[t.tape.result].val, t.tape
+    try
+        rv = trace!(t, ci, v_fargs...)
+        t.tape.result = rv
+        return t.tape[t.tape.result].val, t.tape
+    catch
+        LATEST_TRACER[] = t
+        rethrow()
+    end
+end
+
+
+###############################################################################
+#                           Post-tracing utils                                #
+###############################################################################
+
+
+get_latest_tracer() = LATEST_TRACER[]
+
+function get_latest_tracer_state()
+    t = get_latest_tracer()
+    frame = t.stack[end]
+    return t, frame.ci, frame.v_fargs
+end
+
+function print_stack_trace()
+    t = get_latest_tracer()
+    for (i, frame) in enumerate(reverse(t.stack))
+        fn, args... = [v isa V ? t.tape[v].val : v for v in frame.v_fargs]
+        meth = which(fn, map(Core.Typeof, args))
+        println("[$i] $meth")
+        # println("  @ $(meth.module) $(meth.file)")
+    end
 end
