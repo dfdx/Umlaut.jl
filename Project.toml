@@ -1,7 +1,7 @@
 name = "Umlaut"
 uuid = "92992a2b-8ce5-4a9c-bb9d-58be9a7dc841"
 authors = ["Andrei Zhabinski <andrei.zhabinski@gmail.com>"]
-version = "0.2.3"
+version = "0.2.4"
 
 [deps]
 LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
