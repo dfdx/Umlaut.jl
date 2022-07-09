@@ -9,6 +9,10 @@ inc_mul2(A::AbstractArray, B::AbstractArray) = A .* (B .+ 1)
 non_primitive(x) = 2x + 1
 non_primitive_caller(x) = sin(non_primitive(x))
 
+struct MyType x end
+struct MyTypeWithParams{T} x::T end
+
+
 struct MyCtx end
 
 isprimitive(ctx::MyCtx, f, args...) = isprimitive(BaseCtx(), f, args...) || f == non_primitive
@@ -120,6 +124,12 @@ constructor_loss(a) = (p = Point(a, a); p.x + p.y)
     vararg_wrapper = xs -> vararg_fn(xs...)
     _, tape = trace(vararg_wrapper, (1, 2, 3))
     @test play!(tape, vararg_wrapper, (4, 5, 6, 7)) == vararg_wrapper((4, 5, 6, 7))
+
+
+    # isprimitive for constructors
+    @test isprimitive(BaseCtx(), Int, 1.0)
+    @test isprimitive(BaseCtx(), MyType, 1.0) == false
+    @test isprimitive(BaseCtx(), MyTypeWithParams, 1.0) == false
 
     # constructors
     _, tape = trace(constructor_loss, 4.0)
