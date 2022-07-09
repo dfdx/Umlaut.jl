@@ -16,3 +16,8 @@ GlobalRef, QuoteNode, etc. No-op if there's no known container.
 promote_const_value(x::QuoteNode) = x.value
 promote_const_value(x::GlobalRef) = getproperty(x.mod, x.name)
 promote_const_value(x) = x
+
+
+module_of(f) = parentmodule(typeof(f))
+module_of(f::Function) = parentmodule(f)
+module_of(f::Type{T}) where T = parentmodule(T)
