@@ -1,5 +1,6 @@
 import Core: CodeInfo, SSAValue, SlotNumber
 import Statistics, LinearAlgebra   # include primitives from these stanard modules
+using CompilerPluginTools
 
 
 include("utils.jl")

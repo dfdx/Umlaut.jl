@@ -5,7 +5,7 @@ struct BcastCtx
 end
 
 
-function record_or_recurse!(t::Tracer{BcastCtx}, vs...)
+function trace_call!(t::Tracer{BcastCtx}, vs...)
     fvals = [v isa V ? t.tape[v].val : v for v in vs]
     return if isprimitive(t.tape.c.inner, fvals...)
         push!(t.tape, mkcall(broadcast, vs...))
