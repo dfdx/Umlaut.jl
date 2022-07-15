@@ -1,38 +1,90 @@
 # Naming:
 # v_xxx - Variable xxx
-# sv_xxx - SSAValue xxx or SlotNumber xxx
+# sv_xxx - SSAValue xxx or Argument xxx
+# pc - SSA ID (abbreviation from "program counter")
+# bi - block ID
+
 
 ###############################################################################
 #                                  Frame                                      #
 ###############################################################################
 
+"""
+    block_expressions(ir::IRCode)
+
+For each block, compute a vector of its expressions along with their SSA IDs.
+Returns Vector{block_info}, where block_info is Vector{ssa_id => expr}
+"""
+function block_expressions(ir::IRCode)
+    # new statements
+    new_exs = ir.new_nodes.stmts.inst
+    # where to insert them
+    new_positions = [(info.attach_after ? info.pos + 1 : info.pos)
+                    for info in ir.new_nodes.info]
+    # their indices (program counters)
+    new_pcs = [idx + length(ir.stmts) for idx=1:length(new_exs)]
+    new_node_map = Dict{Int, Vector{Any}}()
+    for (pos, pc, ex) in zip(new_positions, new_pcs, new_exs)
+        if !haskey(new_node_map, pos)
+            new_node_map[pos] = []
+        end
+        push!(new_node_map[pos], (pc, ex))
+    end
+    block_exprs = Vector{Vector{Tuple}}(undef, 0)
+    for bi in eachindex(ir.cfg.blocks)
+        pc_exprs = Tuple[]
+        for pos in ir.cfg.blocks[bi].stmts
+            if haskey(new_node_map, pos)
+                for pc_ex in new_node_map[pos]
+                    push!(pc_exprs, pc_ex)
+                end
+            end
+            push!(pc_exprs, (pos, ir.stmts[pos][:inst]))
+        end
+        push!(block_exprs, pc_exprs)
+    end
+    return block_exprs
+end
+
+
 mutable struct Frame
     # typically values are Variables, but can also be constant values
-    ir2tape::Dict{Union{SSAValue, SlotNumber}, Any}
+    ir2tape::Dict{Union{SSAValue, Argument}, Any}
+    # block_exprs[bi] = [(pc => expr), ...]
+    block_exprs::Vector{Vector{Tuple}}
+    # map from pc to corresponding block ID
+    pc_blocks::Dict{Int, Int}
     # debug info
-    ci::CodeInfo
+    ir::IRCode
     v_fargs
 end
 
 
-function Frame(tape::Tape, ci::CodeInfo, v_fargs...)
-    ir2tape = Dict{Union{SSAValue, SlotNumber}, Any}()
+function Frame(tape::Tape, ir::IRCode, v_fargs...)
+    ir2tape = Dict{Union{SSAValue, Argument}, Any}()
     for (i, v) in enumerate(v_fargs)
         if v isa V
-            ir2tape[SlotNumber(i)] = v
+            ir2tape[Argument(i)] = v
         else
             # c = push!(tape, Constant(promote_const_value(v)))
-            # ir2tape[SlotNumber(i)] = c
-            ir2tape[SlotNumber(i)] = v  # experimental
+            # ir2tape[Argument(i)] = c
+            ir2tape[Argument(i)] = v  # experimental
+            # TODO: unify code in 2 branches if it works this way
         end
-
     end
-    return Frame(ir2tape, ci, v_fargs)
+    block_exprs = block_expressions(ir)
+    pc_blocks = Dict([pc => bi for bi in eachindex(block_exprs) for (pc, _) in block_exprs[bi]])
+    return Frame(ir2tape, block_exprs, pc_blocks, ir, v_fargs)
 end
+
+
+getid(x::SSAValue) = x.id
+getid(x::Argument) = x.n
+
 
 function Base.show(io::IO, frame::Frame)
     s = "Frame(\n"
-    for (sv, v) in sort(frame.ir2tape, by=sv -> sv.id)
+    for (sv, v) in sort(frame.ir2tape, by=getid)
         s *= "  $sv => $v\n"
     end
     s *= ")"
@@ -43,7 +95,7 @@ end
 function resolve_tape_vars(frame::Frame, sv_fargs...)
     v_fargs = []
     for sv in sv_fargs
-        if sv isa SlotNumber || sv isa SSAValue
+        if sv isa Argument || sv isa SSAValue
             push!(v_fargs, frame.ir2tape[sv])
         else
             push!(v_fargs, promote_const_value(sv))
@@ -152,14 +204,14 @@ end
 Tracer(tape::Tape{C}) where C = Tracer{C}(tape, [])
 
 
-function getcode(f, types)
-    cis = code_lowered(f, types)
-    if isempty(cis)
-        arg_type_str = join(types, ", ")
-        error("Cannot get CodeInfo for $f($arg_type_str)")
-    end
-    return cis[1]
+function get_ir(f, args...)
+    types = map(Core.Typeof, (f, args...))
+    irs = code_ircode_by_signature(no_pass, Tuple{types...})
+    @assert !isempty(irs) "No IR found for types $types"
+    @assert length(irs) == 1 "More than one IR found for types $types"
+    return irs[1][1]
 end
+
 
 
 function rewrite_special_cases(st::Expr)
@@ -181,13 +233,13 @@ end
 
 
 """
-    record_or_recurse!(t::Tracer{C}, v_f, v_args...) where C
+    trace_call!(t::Tracer{C}, v_f, v_args...) where C
 
 Customizable handler that controls what to do with a function call.
 The default implementation checks if the call is a primitive and either
 records it to the tape or recurses into it.
 """
-function record_or_recurse!(t::Tracer{C}, vs...) where C
+function trace_call!(t::Tracer{C}, vs...) where C
     fvals = [v isa V ? t.tape[v].val : v for v in vs]
     return if isprimitive(t.tape.c, fvals...)
         record_primitive!(t.tape, vs...)
@@ -196,78 +248,101 @@ function record_or_recurse!(t::Tracer{C}, vs...) where C
         meth = which(fargtypes...)
         v_f, v_args... = vs
         if meth.isva
+            @warn "Vararg method detected! Ths branch has not been tested yet!"
             va = push!(t.tape, mkcall(tuple, v_args[meth.nargs - 1:end]...))
             v_args = (v_args[1:meth.nargs - 2]..., va)
         end
-        trace!(t, getcode(fargtypes...), v_f, v_args...)
+        # trace!(t, get_ir(fargtypes...), v_f, v_args...)
+        trace!(t, get_ir(fvals...), v_f, v_args...)
     end
 end
 
 
-function trace!(t::Tracer, ci::CodeInfo, v_fargs...)
-    frame = Frame(t.tape, ci, v_fargs...)
-    push!(t.stack, frame)
-    sparams = get_static_params(t, v_fargs)
-    i = 1
-    while i <= length(ci.code)
-        st = rewrite_special_cases(ci.code[i])
-        if Meta.isexpr(st, :call) || (Meta.isexpr(st, :(=)) && Meta.isexpr(st.args[2], :call))
-            # function call
-            sv = SSAValue(i)
-            ex = Meta.isexpr(st, :(=)) ? st.args[2] : st
+function record_or_recurse(t, vs...)
+    @warn "record_or_recurse(t, vs...) is deprecated, use trace_call!(t, vs...) instead"
+    trace_call!(t, vs...)
+end
+
+
+is_control_flow(ex) = ex isa GotoNode || ex isa GotoIfNot || ex isa ReturnNode
+
+
+function trace_block!(t::Tracer, ir::IRCode, bi::Integer, prev_bi::Integer, sparams)
+    frame = t.stack[end]
+    for (pc, ex) in frame.block_exprs[bi]
+        ex = rewrite_special_cases(ex)
+        if is_control_flow(ex)
+            return ex   # exit on control flow statement
+        elseif ex isa Core.PhiNode
+            # map current pc to the currently active value of Phi node
+            ir2tape = t.stack[end].ir2tape
+            k = indexin(prev_bi, ex.edges)[]
+            ir2tape[SSAValue(pc)] = ir2tape[ex.values[k]]
+        elseif ex isa Core.PiNode
+            val = t.tape[frame.ir2tape[ex.val]].val
+            frame.ir2tape[SSAValue(pc)] = push!(t.tape, Constant(val))
+        elseif Meta.isexpr(ex, :call)
             vs = resolve_tape_vars(frame, ex.args...)
             vs = [Meta.isexpr(x, :static_parameter) ? sparams[x.args[1]] : x for x in vs]
-            v = record_or_recurse!(t, vs...)
-            frame.ir2tape[sv] = v
-            if Meta.isexpr(st, :(=))
-                # update mapping for slot
-                slot = st.args[1]
-                frame.ir2tape[slot] = v
-            end
-            i += 1
-        elseif Meta.isexpr(st, :(=))
-            # constant or assignment
-            sv = st.args[1]
-            rhs = resolve_tape_vars(frame, st.args[2])[1]
-            # RHS may be a variable or a constant value; in both cases we simply
-            # update the mapping from LHS (SlotNumber & SSAValue) to the RHS
-            frame.ir2tape[sv] = rhs
-            frame.ir2tape[SSAValue(i)] = rhs
-            i += 1
-        elseif st isa SlotNumber
+            v = trace_call!(t, vs...)
+            frame.ir2tape[SSAValue(pc)] = v
+        elseif ex isa SSAValue || ex isa Argument
             # assignment
-            sv = SSAValue(i)
-            frame.ir2tape[sv] = frame.ir2tape[st]
-            i += 1
-        elseif st isa Core.GotoIfNot
+            sv = SSAValue(pc)
+            frame.ir2tape[sv] = frame.ir2tape[ex]
+        elseif ex isa Expr && ex.head in [:code_coverage_effect]
+            # ignored expressions, just skip it
+        elseif ex isa Expr
+            error("Unexpected expression: $ex\nFull IRCode:\n\n $ir")
+        else
+            # treat as constant
+            v = push!(t.tape, Constant(promote_const_value(ex)))
+            frame.ir2tape[SSAValue(pc)] = v
+        end
+    end
+    return  # exit on implicit fallthrough
+end
+
+
+function trace!(t::Tracer, ir::IRCode, v_fargs...)
+    frame = Frame(t.tape, ir, v_fargs...)
+    push!(t.stack, frame)
+    sparams = get_static_params(t, v_fargs)
+    bi = 1
+    prev_bi = 0
+    cf = nothing
+    while bi <= length(ir.cfg.blocks)
+        cf = trace_block!(t, ir, bi, prev_bi, sparams)
+        if isnothing(cf)
+            # fallthrough to the next block
+            prev_bi = bi
+            bi += 1
+        elseif cf isa Core.GotoIfNot
             # conditional jump
-            cond_val = (st.cond isa SlotNumber || st.cond isa SSAValue ?
-                            t.tape[frame.ir2tape[st.cond]].val :   # resolve tape var
-                            st.cond)                               # literal condition (e.g. while true)
+            cond_val = (cf.cond isa Argument || cf.cond isa SSAValue ?
+                        t.tape[frame.ir2tape[cf.cond]].val :   # resolve tape var
+                        cf.cond)                               # literal condition (e.g. while true)
             # if not cond, set i to destination, otherwise step forward
-            i = !cond_val ? st.dest : i + 1
-        elseif st isa Core.GotoNode
+            prev_bi = bi
+            bi = !cond_val ? cf.dest : bi + 1
+        elseif cf isa Core.GotoNode
             # unconditional jump
-            i = st.label
-        elseif st isa Core.ReturnNode
-            # return statement
-            sv = st.val
-            if sv isa SSAValue || sv isa SlotNumber
-                val = frame.ir2tape[sv]
+            prev_bi = bi
+            bi = cf.label
+        elseif cf isa ReturnNode
+            pc = cf.val
+            if pc isa SSAValue || pc isa Argument
+                val = frame.ir2tape[pc]
                 v = val isa V ? val : push!(t.tape, Constant(promote_const_value(val)))
                 pop!(t.stack)
                 return v
             else
-                v = push!(t.tape, Constant(promote_const_value(sv)))
+                v = push!(t.tape, Constant(promote_const_value(pc)))
                 pop!(t.stack)
                 return v
             end
         else
-            # treat as constant
-            v = push!(t.tape, Constant(promote_const_value(st)))
-            frame.ir2tape[SSAValue(i)] = v
-            i += 1
-            # error("Unexpected statement type in CodeInfo: $st")
+            error("Panic! Don't know how to handle control flow expression $cf")
         end
     end
     pop!(t.stack)
@@ -333,17 +408,17 @@ Examples:
 """
 function trace(f, args...; ctx=BaseCtx(), fargtypes=nothing, deprecated_kws...)
     warn_deprecated_keywords(deprecated_kws)
-    if isnothing(fargtypes)
-        fargtypes = (f, map(Core.Typeof, args))
-    end
+    # if isnothing(fargtypes)
+    fargtypes = (f, map(Core.Typeof, args))
+    # end
     t = Tracer(Tape(ctx))
     meth = which(fargtypes...)
     xargs = meth.isva ? (args[1:meth.nargs - 2]..., args[meth.nargs - 1:end]) : args
     t.tape.meta[:isva] = meth.isva
     v_fargs = inputs!(t.tape, f, xargs...)
-    ci = getcode(fargtypes...)
+    ir = get_ir(f, args...)
     try
-        rv = trace!(t, ci, v_fargs...)
+        rv = trace!(t, ir, v_fargs...)
         t.tape.result = rv
         return t.tape[t.tape.result].val, t.tape
     catch
