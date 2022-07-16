@@ -232,6 +232,19 @@ function get_static_params(t::Tracer, v_fargs)
 end
 
 
+function group_varargs(t::Tracer, v_fargs)
+    fargs = map_vars(v -> t.tape[v].val, v_fargs)
+    fargtypes = (fargs[1], map(Core.Typeof, fargs[2:end]))
+    meth = which(fargtypes...)
+    v_f, v_args... = v_fargs
+    if meth.isva
+        va = push!(t.tape, mkcall(tuple, v_args[meth.nargs - 1:end]...))
+        v_args = (v_args[1:meth.nargs - 2]..., va)
+    end
+    return (v_f, v_args...)
+end
+
+
 """
     trace_call!(t::Tracer{C}, v_f, v_args...) where C
 
@@ -240,20 +253,12 @@ The default implementation checks if the call is a primitive and either
 records it to the tape or recurses into it.
 """
 function trace_call!(t::Tracer{C}, vs...) where C
-    fvals = [v isa V ? t.tape[v].val : v for v in vs]
-    return if isprimitive(t.tape.c, fvals...)
+    fargs = [v isa V ? t.tape[v].val : v for v in vs]
+    return if isprimitive(t.tape.c, fargs...)
         record_primitive!(t.tape, vs...)
     else
-        fargtypes = (fvals[1], map(Core.Typeof, fvals[2:end]))
-        meth = which(fargtypes...)
-        v_f, v_args... = vs
-        if meth.isva
-            @warn "Vararg method detected! Ths branch has not been tested yet!"
-            va = push!(t.tape, mkcall(tuple, v_args[meth.nargs - 1:end]...))
-            v_args = (v_args[1:meth.nargs - 2]..., va)
-        end
-        # trace!(t, get_ir(fargtypes...), v_f, v_args...)
-        trace!(t, get_ir(fvals...), v_f, v_args...)
+        vs = group_varargs(t, vs)
+        trace!(t, get_ir(fargs...), vs...)
     end
 end
 
