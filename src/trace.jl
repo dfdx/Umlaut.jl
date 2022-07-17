@@ -245,6 +245,40 @@ function group_varargs(t::Tracer, v_fargs)
 end
 
 
+struct Splatted
+    var
+end
+
+
+function adjust_arguments!(t::Tracer, v_fargs, fargs)
+    v_f, v_args... = v_fargs
+    f, args... = fargs
+    # find method corresponding to f(args...)
+    fargtypes = (f, map(Core.Typeof, args))
+    meth = which(fargtypes...)
+    # if some of the variables are splatted, record them
+    # as separate variables to the tape
+    _v_args = []
+    for v in v_args
+        if v isa Splatted
+            for i in eachindex(t.tape[v.var].val)
+                x = push!(t.tape, mkcall(getindex, v.var, i))
+                push!(_v_args, x)
+            end
+        else
+            push!(_v_args, v)
+        end
+    end
+    v_args = _v_args
+    # if the method has varargs, group extra vars into a tuple
+    if meth.isva
+        va = push!(t.tape, mkcall(tuple, v_args[meth.nargs - 1:end]...))
+        v_args = (v_args[1:meth.nargs - 2]..., va)
+    end
+    return (v_f, v_args...)
+end
+
+
 """
     trace_call!(t::Tracer{C}, v_f, v_args...) where C
 
@@ -253,12 +287,20 @@ The default implementation checks if the call is a primitive and either
 records it to the tape or recurses into it.
 """
 function trace_call!(t::Tracer{C}, vs...) where C
+    # global STATE = t, vs
+    # vs[1] == Core._apply_iterate && error("HERE")
     fargs = [v isa V ? t.tape[v].val : v for v in vs]
-    return if isprimitive(t.tape.c, fargs...)
-        record_primitive!(t.tape, vs...)
+    if fargs[1] == Core._apply_iterate && !isprimitive(t.tape.c, fargs[3:end]...)
+        # actual function and arguments
+        _f = fargs[3]; _v_f = vs[3]
+        _args = flatten(fargs[4:end]); _v_args = map(Splatted, vs[4:end])
+        _v_fargs = adjust_arguments!(t, (_v_f, _v_args...), (_f, _args...))
+        return trace!(t, get_ir(_f, _args...), _v_fargs...)
+    elseif isprimitive(t.tape.c, fargs...)
+        return record_primitive!(t.tape, vs...)
     else
-        vs = group_varargs(t, vs)
-        trace!(t, get_ir(fargs...), vs...)
+        vs = group_varargs(t, vs)  # TODO: should be adjust_arguments!() instead?
+        return trace!(t, get_ir(fargs...), vs...)
     end
 end
 
