@@ -161,6 +161,24 @@ isprimitive(ctx::Any, f, args...) = isprimitive(BaseCtx(), f, args...)
 
 
 """
+    is_ho_tracable(ctx::Any, f, args...)
+
+Is higher-order tracable. Returns true if `f` is a known higher-order function
+that Umlaut knows how to trace and its functional argument is a non-primitive.
+
+`is_ho_tracable()` helps to trace through higher-order functions like `Core._apply_iterate()`
+(used internally when splatting arguments with ...) as if they themselves
+were non-primitives.
+"""
+function is_ho_tracable(ctx::Any, fargs...)
+    if fargs[1] === Core._apply_iterate && !isprimitive(ctx, fargs[3:end]...)
+        return true
+    end
+    return false
+end
+
+
+"""
     record_primitive!(tape::Tape{C}, v_fargs...) where C
 
 Record a primitive function call to the tape.
@@ -245,38 +263,38 @@ function group_varargs(t::Tracer, v_fargs)
 end
 
 
-struct Splatted
-    var
-end
+# struct Splatted
+#     var
+# end
 
 
-function adjust_arguments!(t::Tracer, v_fargs, fargs)
-    v_f, v_args... = v_fargs
-    f, args... = fargs
-    # find method corresponding to f(args...)
-    fargtypes = (f, map(Core.Typeof, args))
-    meth = which(fargtypes...)
-    # if some of the variables are splatted, record them
-    # as separate variables to the tape
-    _v_args = []
-    for v in v_args
-        if v isa Splatted
-            for i in eachindex(t.tape[v.var].val)
-                x = push!(t.tape, mkcall(getindex, v.var, i))
-                push!(_v_args, x)
-            end
-        else
-            push!(_v_args, v)
-        end
-    end
-    v_args = _v_args
-    # if the method has varargs, group extra vars into a tuple
-    if meth.isva
-        va = push!(t.tape, mkcall(tuple, v_args[meth.nargs - 1:end]...))
-        v_args = (v_args[1:meth.nargs - 2]..., va)
-    end
-    return (v_f, v_args...)
-end
+# function adjust_arguments!(t::Tracer, v_fargs, fargs)
+#     v_f, v_args... = v_fargs
+#     f, args... = fargs
+#     # find method corresponding to f(args...)
+#     fargtypes = (f, map(Core.Typeof, args))
+#     meth = which(fargtypes...)
+#     # if some of the variables are splatted, record them
+#     # as separate variables to the tape
+#     _v_args = []
+#     for v in v_args
+#         if v isa Splatted
+#             for i in eachindex(t.tape[v.var].val)
+#                 x = push!(t.tape, mkcall(getindex, v.var, i))
+#                 push!(_v_args, x)
+#             end
+#         else
+#             push!(_v_args, v)
+#         end
+#     end
+#     v_args = _v_args
+#     # if the method has varargs, group extra vars into a tuple
+#     if meth.isva
+#         va = push!(t.tape, mkcall(tuple, v_args[meth.nargs - 1:end]...))
+#         v_args = (v_args[1:meth.nargs - 2]..., va)
+#     end
+#     return (v_f, v_args...)
+# end
 
 
 """
@@ -287,20 +305,19 @@ The default implementation checks if the call is a primitive and either
 records it to the tape or recurses into it.
 """
 function trace_call!(t::Tracer{C}, vs...) where C
-    # global STATE = t, vs
-    # vs[1] == Core._apply_iterate && error("HERE")
     fargs = [v isa V ? t.tape[v].val : v for v in vs]
-    if fargs[1] == Core._apply_iterate && !isprimitive(t.tape.c, fargs[3:end]...)
-        # actual function and arguments
-        _f = fargs[3]; _v_f = vs[3]
-        _args = flatten(fargs[4:end]); _v_args = map(Splatted, vs[4:end])
-        _v_fargs = adjust_arguments!(t, (_v_f, _v_args...), (_f, _args...))
-        return trace!(t, get_ir(_f, _args...), _v_fargs...)
-    elseif isprimitive(t.tape.c, fargs...)
+    # if fargs[1] == Core._apply_iterate && !isprimitive(t.tape.c, fargs[3:end]...)
+    #     # actual function and arguments
+    #     _f = fargs[3]; _v_f = vs[3]
+    #     _args = flatten(fargs[4:end]); _v_args = map(Splatted, vs[4:end])
+    #     _v_fargs = adjust_arguments!(t, (_v_f, _v_args...), (_f, _args...))
+    #     return trace!(t, get_ir(_f, _args...), _v_fargs...)
+    # else
+    if isprimitive(t.tape.c, fargs...) && !is_ho_tracable(t.tape.c, fargs...)
         return record_primitive!(t.tape, vs...)
     else
-        vs = group_varargs(t, vs)  # TODO: should be adjust_arguments!() instead?
-        return trace!(t, get_ir(fargs...), vs...)
+        # vs = group_varargs(t, vs)  # TODO: should be adjust_arguments!() instead?
+        return trace!(t, vs...)
     end
 end
 
@@ -320,6 +337,11 @@ function trace_block!(t::Tracer, ir::IRCode, bi::Integer, prev_bi::Integer, spar
         ex = rewrite_special_cases(ex)
         if is_control_flow(ex)
             return ex   # exit on control flow statement
+        elseif Meta.isexpr(ex, :call)
+            vs = resolve_tape_vars(frame, ex.args...)
+            vs = [Meta.isexpr(x, :static_parameter) ? sparams[x.args[1]] : x for x in vs]
+            v = trace_call!(t, vs...)
+            frame.ir2tape[SSAValue(pc)] = v
         elseif ex isa Core.PhiNode
             # map current pc to the currently active value of Phi node
             ir2tape = t.stack[end].ir2tape
@@ -328,11 +350,6 @@ function trace_block!(t::Tracer, ir::IRCode, bi::Integer, prev_bi::Integer, spar
         elseif ex isa Core.PiNode
             val = t.tape[frame.ir2tape[ex.val]].val
             frame.ir2tape[SSAValue(pc)] = push!(t.tape, Constant(val))
-        elseif Meta.isexpr(ex, :call)
-            vs = resolve_tape_vars(frame, ex.args...)
-            vs = [Meta.isexpr(x, :static_parameter) ? sparams[x.args[1]] : x for x in vs]
-            v = trace_call!(t, vs...)
-            frame.ir2tape[SSAValue(pc)] = v
         elseif ex isa SSAValue || ex isa Argument
             # assignment
             sv = SSAValue(pc)
@@ -351,7 +368,65 @@ function trace_block!(t::Tracer, ir::IRCode, bi::Integer, prev_bi::Integer, spar
 end
 
 
-function trace!(t::Tracer, ir::IRCode, v_fargs...)
+"""
+    adjust_arguments!(t::Tracer, v_fargs)
+
+Adjust tape variables passed to the function to actual function parameters.
+This includes two cases:
+
+* splatted arguments to a call: these are destructured to the tape as separate vars
+* var args in signature: extra arguments are grouped into a tuple on the tape
+"""
+function adjust_arguments!(t::Tracer, v_fargs)
+    # fargs = map_vars(v -> t.tape[v].val, v_fargs)
+    # v_f, v_args... = v_fargs
+    # f, args... = fargs
+
+    # TODO: special case: if number of all splatted arguments is equal to
+    # the number of varargs, pass them as is
+    # Should we also check that splatted argument is a tuple?
+
+    # handle splatted arguments
+    f = v_fargs[1] isa V ? t.tape[v_fargs[1]] : v_fargs[1]
+    if f === Core._apply_iterate
+        actual_v_args = []
+        for v in v_fargs[4:end]
+            for i in eachindex(t.tape[v].val)
+                # destructure splatted arguments as separate vars on tape
+                x = push!(t.tape, mkcall(getindex, v, i))
+                push!(actual_v_args, x)
+            end
+        end
+        v_fargs = (v_fargs[3], actual_v_args...)
+    end
+    # if the method has varargs, group extra vars into a tuple
+    fargs = map_vars(v -> t.tape[v].val, v_fargs)
+    v_f, v_args... = v_fargs
+    f, args... = fargs
+    fargtypes = (f, map(Core.Typeof, args))
+    meth = which(fargtypes...)
+    if meth.isva
+        extra_v_args = v_args[meth.nargs - 1:end]
+        # don't group the input varargs tuple - we handle it separately
+        if !(length(extra_v_args) == 1 && t.tape[extra_v_args[1]] isa Input)
+            va = push!(t.tape, mkcall(tuple, extra_v_args...))
+            v_args = (v_args[1:meth.nargs - 2]..., va)
+        end
+    end
+    return (v_f, v_args...)
+end
+
+
+function trace!(t::Tracer, v_fargs...)
+    # global STATE = t, v_fargs
+    # v_fargs[1] == Core._apply_iterate && error("HERE")
+
+    v_fargs = adjust_arguments!(t, v_fargs)
+
+    fargs = map_vars(v -> t.tape[v].val, v_fargs)
+    ir = get_ir(fargs...)
+
+
     frame = Frame(t.tape, ir, v_fargs...)
     push!(t.stack, frame)
     sparams = get_static_params(t, v_fargs)
@@ -377,6 +452,7 @@ function trace!(t::Tracer, ir::IRCode, v_fargs...)
             prev_bi = bi
             bi = cf.label
         elseif cf isa ReturnNode
+            global STATE = t, cf
             pc = cf.val
             if pc isa SSAValue || pc isa Argument
                 val = frame.ir2tape[pc]
@@ -463,9 +539,8 @@ function trace(f, args...; ctx=BaseCtx(), fargtypes=nothing, deprecated_kws...)
     xargs = meth.isva ? (args[1:meth.nargs - 2]..., args[meth.nargs - 1:end]) : args
     t.tape.meta[:isva] = meth.isva
     v_fargs = inputs!(t.tape, f, xargs...)
-    ir = get_ir(f, args...)
     try
-        rv = trace!(t, ir, v_fargs...)
+        rv = trace!(t, v_fargs...)
         t.tape.result = rv
         return t.tape[t.tape.result].val, t.tape
     catch
