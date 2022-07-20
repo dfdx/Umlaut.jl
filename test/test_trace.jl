@@ -51,18 +51,25 @@ function vararg_fn(x, xs...)
     return x + sum(xs)
 end
 
+multiarg_fn(x) = x
+multiarg_fn(x, y) = x + y
+multiarg_fn(x, y, z) = x + y + z
+
 
 mutable struct Point x; y end
 constructor_loss(a) = (p = Point(a, a); p.x + p.y)
 
 
-@testset "trace" begin
+@testset "trace: calls" begin
     # calls
     val, tape = trace(inc_mul, 2.0, 3.0)
     @test val == inc_mul(2.0, 3.0)
     @test length(tape) == 5
     @test tape[V(5)].args[1].id == 2
+end
 
+
+@testset "trace: bcast" begin
     # bcast
     A = rand(3)
     B = rand(3)
@@ -73,7 +80,10 @@ constructor_loss(a) = (p = Point(a, a); p.x + p.y)
 
     val, tape = trace(inc_mul2, A, B)
     @test val == inc_mul2(A, B)
+end
 
+
+@testset "trace: primitives" begin
     # primitives
     x = 3.0
     val1, tape1 = trace(non_primitive_caller, x)
@@ -87,7 +97,10 @@ constructor_loss(a) = (p = Point(a, a); p.x + p.y)
     @test tape2[V(4)].fn == sin
     @test tape3[V(3)].fn == non_primitive
     @test tape3[V(4)].fn == sin
+end
 
+
+@testset "trace: closures, iterables" begin
     # tuple unpacking
     val, tape = trace(tuple_unpack, 4.0)
     @test val == tuple_unpack(4.0)
@@ -105,7 +118,10 @@ constructor_loss(a) = (p = Point(a, a); p.x + p.y)
     @test val == f(xs)
     xs2 = rand(5)
     @test play!(tape, nothing, xs2) == f(xs2)
+end
 
+
+@testset "trace: no inputs/outputs" begin
     # constant return value
     _, tape = trace(constant_return_value, 1.0)
     @test play!(tape, nothing, 2.0) === nothing
@@ -113,7 +129,10 @@ constructor_loss(a) = (p = Point(a, a); p.x + p.y)
     # no input
     _, tape = trace(no_input)
     @test tape[V(2)].fn == print
+end
 
+
+@testset "trace: varargs, splatting" begin
     # varargs
     _, tape = trace(vararg_fn, 1, 2, 3)
     @test play!(tape, vararg_fn, 4, 5, 6, 7) == vararg_fn(4, 5, 6, 7)
@@ -123,9 +142,27 @@ constructor_loss(a) = (p = Point(a, a); p.x + p.y)
 
     vararg_wrapper = xs -> vararg_fn(xs...)
     _, tape = trace(vararg_wrapper, (1, 2, 3))
-    @test play!(tape, vararg_wrapper, (4, 5, 6, 7)) == vararg_wrapper((4, 5, 6, 7))
+    @test play!(tape, vararg_wrapper, (4, 5, 6)) == vararg_wrapper((4, 5, 6))
 
+    # tuple/vararg unpacking
+    f = t -> multiarg_fn(t...)
+    _, tape = trace(f, (1, 2))
+    @test play!(tape, f, (3, 4)) == f((3, 4))
+    @test tape[V(4)].fn == Base.getindex
+    @test tape[V(5)].fn == Base.getindex
 
+    @test_logs (:warn, "Variable %2 had length 2 during tracing, but now has length 3") play!(tape, f, (5, 6, 7))
+
+    # tuple/vararg optimization
+    f = x -> multiarg_fn((x, x, 1)...)
+    _, tape = trace(f, 1)
+    @test play!(tape, f, 2) == f(2)
+    v2 = V(tape, 2)
+    @test (tape[V(end)].fn == +) && (tape[V(end)].args == [v2, v2, 1])
+
+end
+
+@testset "trace: constructors" begin
     # isprimitive for constructors
     @test isprimitive(BaseCtx(), Int, 1.0)
     @test isprimitive(BaseCtx(), MyType, 1.0) == false
@@ -135,7 +172,10 @@ constructor_loss(a) = (p = Point(a, a); p.x + p.y)
     _, tape = trace(constructor_loss, 4.0)
     @test tape[V(3)].val == Point
     @test tape[V(4)].fn == __new__
+end
 
+
+@testset "trace: static_params" begin
     # Expr(:static_parameter, n)
     val, tape = trace(sin, 2.0)
     @test val == sin(2.0)
@@ -365,7 +405,7 @@ function while_break(x)
 end
 
 
-@testset "trace: extra tests" begin
+@testset "trace: jumps" begin
     # a few smoke tests to ensure static tracer handles jumps properly
     _, tape = trace(pow, 2.0, 3)
     @test play!(tape, pow, 3.0, 3) == pow(3.0, 3)

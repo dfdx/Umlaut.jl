@@ -21,3 +21,12 @@ promote_const_value(x) = x
 module_of(f) = parentmodule(typeof(f))
 module_of(f::Function) = parentmodule(f)
 module_of(f::Type{T}) where T = parentmodule(T)
+
+
+function flatten(xs)
+    res = []
+    for x in xs
+        push!(res, x...)
+    end
+    return res
+end
