@@ -1,8 +1,13 @@
-# Naming:
-# v_xxx - Variable xxx
-# sv_xxx - SSAValue xxx or Argument xxx
-# pc - SSA ID (abbreviation from "program counter")
-# bi - block ID
+# Naming in this file:
+#
+# ir :: IRCode
+# v_xxx :: Variable xxx
+# sv_xxx :: SSAValue xxx or Argument xxx
+# pc :: SSA ID (abbreviation from "program counter")
+# bi :: block ID
+# fargs :: tuple of function and its arguments, e.g. (+, 1, 2)
+# v_fargs :: same as fargs, but may contain vars instead if values, e.g. (+, %3, 1)
+# fargtypes :: tuple of function and argument types, e.g. (+, (Int, Int))
 
 
 ###############################################################################
@@ -230,17 +235,15 @@ function getcode(f, argtypes)
 end
 
 
-# macro getcode(ex)
-#     f, args... = ex.args
-#     return quote
-#         _f = $(esc(f))
-#         _args = $(esc(args))
-#         fargtypes = map(Core.Typeof, (_f, _args...))
-#         # return get_ir(fargtypes)
-#     end
-# end
-
-
+macro getcode(ex)
+    f, args... = ex.args
+    return quote
+        _f = $(esc(f))
+        _args = $(esc(args))
+        fargtypes = (_f, map(Core.Typeof, args))
+        return getcode(fargtypes...)
+    end
+end
 
 
 function rewrite_special_cases(st::Expr)
@@ -261,21 +264,6 @@ function get_static_params(t::Tracer, v_fargs)
 end
 
 
-# function group_varargs(t::Tracer, v_fargs)
-#     fargs = map_vars(v -> t.tape[v].val, v_fargs)
-#     fargtypes = (fargs[1], map(Core.Typeof, fargs[2:end]))
-#     meth = which(fargtypes...)
-#     v_f, v_args... = v_fargs
-#     if meth.isva
-#         va = push!(t.tape, mkcall(tuple, v_args[meth.nargs - 1:end]...))
-#         v_args = (v_args[1:meth.nargs - 2]..., va)
-#     end
-#     return (v_f, v_args...)
-# end
-
-
-
-
 """
     trace_call!(t::Tracer{C}, v_f, v_args...) where C
 
@@ -293,8 +281,8 @@ function trace_call!(t::Tracer{C}, vs...) where C
 end
 
 
-function record_or_recurse(t, vs...)
-    @warn "record_or_recurse(t, vs...) is deprecated, use trace_call!(t, vs...) instead"
+function record_or_recurse!(t, vs...)
+    @warn "record_or_recurse!(t, vs...) is deprecated, use trace_call!(t, vs...) instead"
     trace_call!(t, vs...)
 end
 
@@ -339,6 +327,14 @@ function trace_block!(t::Tracer, ir::IRCode, bi::Integer, prev_bi::Integer, spar
 end
 
 
+function check_variable_length(val, len::Integer, id::Integer)
+    if length(val) != len
+        @warn("Variable %$(id) had length $len during tracing, " *
+              "but now has length $(length(val))")
+    end
+end
+
+
 """
     get_adjusted_ir!(t::Tracer, v_fargs)
 
@@ -354,11 +350,19 @@ function get_adjusted_ir!(t::Tracer, v_fargs, fargtypes)
     # handle splatted arguments
     if f === Core._apply_iterate
         # destructure splatted arguments as separate vars onto the tape
+        # or use existing vars if they can be inferred
         actual_v_args = []
         for v in v_fargs[4:end]
-            for i in eachindex(t.tape[v].val)
-                x = push!(t.tape, mkcall(getindex, v, i))
-                push!(actual_v_args, x)
+            push!(t.tape, mkcall(check_variable_length, v, length(v.op.val), v.id))
+            iter = t.tape[v]
+            is_tuple = iter isa Call && iter.fn === Base.tuple
+            if is_tuple
+                push!(actual_v_args, iter.args...)
+            else
+                for i in eachindex(iter.val)
+                    x = push!(t.tape, mkcall(getindex, v, i))
+                    push!(actual_v_args, x)
+                end
             end
         end
         v_fargs = (v_fargs[3], actual_v_args...)
@@ -381,6 +385,11 @@ function get_adjusted_ir!(t::Tracer, v_fargs, fargtypes)
 end
 
 
+"""
+    trace!(t::Tracer, v_fargs, fargtypes=nothing)
+
+Trace call defined by variables in v_fargs.
+"""
 function trace!(t::Tracer, v_fargs, fargtypes=nothing)
     if isnothing(fargtypes)
         f, args... = map_vars(v -> t.tape[v].val, v_fargs)

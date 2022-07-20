@@ -51,6 +51,10 @@ function vararg_fn(x, xs...)
     return x + sum(xs)
 end
 
+multiarg_fn(x) = x
+multiarg_fn(x, y) = x + y
+multiarg_fn(x, y, z) = x + y + z
+
 
 mutable struct Point x; y end
 constructor_loss(a) = (p = Point(a, a); p.x + p.y)
@@ -139,9 +143,23 @@ end
     vararg_wrapper = xs -> vararg_fn(xs...)
     _, tape = trace(vararg_wrapper, (1, 2, 3))
     @test play!(tape, vararg_wrapper, (4, 5, 6)) == vararg_wrapper((4, 5, 6))
-    # currently broken because we started to trace through _apply_iterate
-    # and the resulting graph is not reproducible w.r.t. tuple length
-    @test_broken play!(tape, vararg_wrapper, (4, 5, 6, 7)) == vararg_wrapper((4, 5, 6, 7))
+
+    # tuple/vararg unpacking
+    f = t -> multiarg_fn(t...)
+    _, tape = trace(f, (1, 2))
+    @test play!(tape, f, (3, 4)) == f((3, 4))
+    @test tape[V(4)].fn == Base.getindex
+    @test tape[V(5)].fn == Base.getindex
+
+    @test_logs (:warn, "Variable %2 had length 2 during tracing, but now has length 3") play!(tape, f, (5, 6, 7))
+
+    # tuple/vararg optimization
+    f = x -> multiarg_fn((x, x, 1)...)
+    _, tape = trace(f, 1)
+    @test play!(tape, f, 2) == f(2)
+    v2 = V(tape, 2)
+    @test (tape[V(end)].fn == +) && (tape[V(end)].args == [v2, v2, 1])
+
 end
 
 @testset "trace: constructors" begin
