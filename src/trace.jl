@@ -147,8 +147,8 @@ function isprimitive(ctx::BaseCtx, f, args...)
     if isempty(ctx.primitives)
         f in (__new__, Colon(), Base.Generator) && return true
         f isa NamedTuple && return true
-        modl = module_of(f)
-        modl in (Base, Core, Core.Intrinsics, Broadcast, Statistics, LinearAlgebra) && return true
+        modl = module_of(f, args...)
+        modl in (Base, Base.Math, Core, Core.Intrinsics, Broadcast, Statistics, LinearAlgebra) && return true
         return false
     else
         return f in ctx.primitives

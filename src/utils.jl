@@ -18,9 +18,15 @@ promote_const_value(x::GlobalRef) = getproperty(x.mod, x.name)
 promote_const_value(x) = x
 
 
-module_of(f) = parentmodule(typeof(f))
-module_of(f::Function) = parentmodule(f)
-module_of(f::Type{T}) where T = parentmodule(T)
+function module_of(f, args...)
+    if f isa Core.IntrinsicFunction || f isa Core.Builtin
+        # may be actually another built-in module, but it's ok for our use case
+        return Core
+    else
+        types = map(Core.Typeof, args)
+        return which(f, types).module
+    end
+end
 
 
 function flatten(xs)

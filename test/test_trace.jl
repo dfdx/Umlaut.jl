@@ -9,10 +9,6 @@ inc_mul2(A::AbstractArray, B::AbstractArray) = A .* (B .+ 1)
 non_primitive(x) = 2x + 1
 non_primitive_caller(x) = sin(non_primitive(x))
 
-struct MyType x end
-struct MyTypeWithParams{T} x::T end
-
-
 struct MyCtx end
 
 isprimitive(ctx::MyCtx, f, args...) = isprimitive(BaseCtx(), f, args...) || f == non_primitive
@@ -164,6 +160,7 @@ end
 
 @testset "trace: constructors" begin
     # isprimitive for constructors
+    # MyType & MyTypeWithParams are defined in test_utils.jl
     @test isprimitive(BaseCtx(), Int, 1.0)
     @test isprimitive(BaseCtx(), MyType, 1.0) == false
     @test isprimitive(BaseCtx(), MyTypeWithParams, 1.0) == false
@@ -175,11 +172,15 @@ end
 end
 
 
+inc_val(::Val{N}) where N = N + 1
+
 @testset "trace: static_params" begin
     # Expr(:static_parameter, n)
-    val, tape = trace(sin, 2.0)
-    @test val == sin(2.0)
-    @test play!(tape, sin, 3.0) ≈ sin(3.0)
+    val, tape = trace(inc_val, Val(2))
+    @test val == inc_val(Val(2))
+    # note: static parameter is recorded as constant
+    # so changing value on tape has no effect
+    @test play!(tape, inc_val, Val(42)) == inc_val(Val(2))
 end
 
 
