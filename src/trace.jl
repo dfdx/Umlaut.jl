@@ -147,6 +147,7 @@ function isprimitive(ctx::BaseCtx, f, args...)
     if isempty(ctx.primitives)
         f in (__new__, Colon(), Base.Generator) && return true
         f isa NamedTuple && return true
+        (f isa ComposedFunction || f === (∘)) && return false
         modl = module_of(f, args...)
         modl in (Base, Base.Math, Core, Core.Intrinsics, Broadcast, Statistics, LinearAlgebra) && return true
         return false
@@ -176,9 +177,11 @@ that Umlaut knows how to trace and its functional argument is a non-primitive.
 were non-primitives.
 """
 function is_ho_tracable(ctx::Any, fargs...)
-    if fargs[1] === Core._apply_iterate && !isprimitive(ctx, fargs[3:end]...)
+    f = fargs[1]
+    if f === Core._apply_iterate && !isprimitive(ctx, fargs[3:end]...)
         return true
     end
+
     return false
 end
 
@@ -240,7 +243,7 @@ macro getcode(ex)
     return quote
         _f = $(esc(f))
         _args = $(esc(args))
-        fargtypes = (_f, map(Core.Typeof, args))
+        fargtypes = (_f, map(Core.Typeof, _args))
         return getcode(fargtypes...)
     end
 end
@@ -272,7 +275,7 @@ The default implementation checks if the call is a primitive and either
 records it to the tape or recurses into it.
 """
 function trace_call!(t::Tracer{C}, vs...) where C
-    fargs = [v isa V ? t.tape[v].val : v for v in vs]
+    fargs = var_values(vs)
     if isprimitive(t.tape.c, fargs...) && !is_ho_tracable(t.tape.c, fargs...)
         return record_primitive!(t.tape, vs...)
     else
@@ -345,7 +348,6 @@ This includes two cases:
 * var args in signature: extra arguments are grouped into a tuple on the tape
 """
 function get_adjusted_ir!(t::Tracer, v_fargs, fargtypes)
-    # global STATE = t, v_fargs, fargtypes
     f = v_fargs[1] isa V ? t.tape[v_fargs[1]] : v_fargs[1]
     # handle splatted arguments
     if f === Core._apply_iterate
@@ -385,6 +387,15 @@ function get_adjusted_ir!(t::Tracer, v_fargs, fargtypes)
 end
 
 
+function trace_composed_function!(t::Tracer, v_fargs)
+    f, args... = var_values(v_fargs)
+    @assert f isa ComposedFunction
+    # TODO: v = trace_call! f.inner(args...)
+    # then return trace_call! f.outer(v)
+
+end
+
+
 """
     trace!(t::Tracer, v_fargs, fargtypes=nothing)
 
@@ -392,10 +403,19 @@ Trace call defined by variables in v_fargs.
 """
 function trace!(t::Tracer, v_fargs, fargtypes=nothing)
     if isnothing(fargtypes)
-        f, args... = map_vars(v -> t.tape[v].val, v_fargs)
+        f, args... = var_values(v_fargs)
         fargtypes = (f, map(Core.Typeof, args))
     end
     ir, v_fargs = get_adjusted_ir!(t, v_fargs, fargtypes)
+    # if v_fargs[1] === ∘  # TODO: also handle var case
+    #     global STATE = t, v_fargs
+    #     error("HERE")
+    #     # TODO: make ∘ non-primitive
+    #     # TODO: implement trace_compose!
+    #     # Noooooo! We can't trace compose yet because here we are just
+    #     # building a CompositeFunction, but not applying it!
+    #     return trace_composed_function!(t, v_fargs)
+    # end
     frame = Frame(t.tape, ir, v_fargs...)
     push!(t.stack, frame)
     sparams = get_static_params(t, v_fargs)
