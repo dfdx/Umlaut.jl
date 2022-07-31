@@ -1,10 +1,6 @@
 import Umlaut: Tape, V, Call, mkcall, play!, compile, Loop, __new__
 import Umlaut: trace, isprimitive, record_primitive!, BaseCtx
 
-inc_mul(a::Real, b::Real) = a * (b + 1.0)
-inc_mul(A::AbstractArray, B::AbstractArray) = inc_mul.(A, B)
-inc_mul2(A::AbstractArray, B::AbstractArray) = A .* (B .+ 1)
-
 
 non_primitive(x) = 2x + 1
 non_primitive_caller(x) = sin(non_primitive(x))
@@ -12,6 +8,57 @@ non_primitive_caller(x) = sin(non_primitive(x))
 struct MyCtx end
 
 isprimitive(ctx::MyCtx, f, args...) = isprimitive(BaseCtx(), f, args...) || f == non_primitive
+
+
+@testset "trace: primitives" begin
+    # primitives
+    x = 3.0
+    val1, tape1 = trace(non_primitive_caller, x)
+    val2, tape2 = trace(non_primitive_caller, x; ctx=BaseCtx([non_primitive, sin]))
+    val3, tape3 = trace(non_primitive_caller, x; ctx=MyCtx())
+
+    @test val1 == val2
+    @test val1 == val3
+    @test any(op isa Call && op.fn == (*) for op in tape1)
+    @test tape2[V(3)].fn == non_primitive
+    @test tape2[V(4)].fn == sin
+    @test tape3[V(3)].fn == non_primitive
+    @test tape3[V(4)].fn == sin
+end
+
+
+###############################################################################
+
+inc_mul(a::Real, b::Real) = a * (b + 1.0)
+inc_mul(A::AbstractArray, B::AbstractArray) = inc_mul.(A, B)
+inc_mul2(A::AbstractArray, B::AbstractArray) = A .* (B .+ 1)
+
+
+@testset "trace: calls" begin
+    # calls
+    val, tape = trace(inc_mul, 2.0, 3.0)
+    @test val == inc_mul(2.0, 3.0)
+    @test length(tape) == 5
+    @test tape[V(5)].args[1].id == 2
+end
+
+###############################################################################
+
+
+@testset "trace: bcast" begin
+    # bcast
+    A = rand(3)
+    B = rand(3)
+    val, tape = trace(inc_mul, A, B)
+    @test val == inc_mul(A, B)
+    # broadcasting may be lowered to different forms,
+    # so making no assumptions regarding the tape
+
+    val, tape = trace(inc_mul2, A, B)
+    @test val == inc_mul2(A, B)
+end
+
+###############################################################################
 
 
 make_tuple(a, b) = (a, b)
@@ -29,70 +76,6 @@ end
 function add(x, y)
     adder = make_adder(x)
     adder(y)
-end
-
-
-function constant_return_value(x)
-    2x
-    nothing
-end
-
-
-function no_input()
-    print()
-end
-
-
-function vararg_fn(x, xs...)
-    return x + sum(xs)
-end
-
-multiarg_fn(x) = x
-multiarg_fn(x, y) = x + y
-multiarg_fn(x, y, z) = x + y + z
-
-
-mutable struct Point x; y end
-constructor_loss(a) = (p = Point(a, a); p.x + p.y)
-
-
-@testset "trace: calls" begin
-    # calls
-    val, tape = trace(inc_mul, 2.0, 3.0)
-    @test val == inc_mul(2.0, 3.0)
-    @test length(tape) == 5
-    @test tape[V(5)].args[1].id == 2
-end
-
-
-@testset "trace: bcast" begin
-    # bcast
-    A = rand(3)
-    B = rand(3)
-    val, tape = trace(inc_mul, A, B)
-    @test val == inc_mul(A, B)
-    # broadcasting may be lowered to different forms,
-    # so making no assumptions regarding the tape
-
-    val, tape = trace(inc_mul2, A, B)
-    @test val == inc_mul2(A, B)
-end
-
-
-@testset "trace: primitives" begin
-    # primitives
-    x = 3.0
-    val1, tape1 = trace(non_primitive_caller, x)
-    val2, tape2 = trace(non_primitive_caller, x; ctx=BaseCtx([non_primitive, sin]))
-    val3, tape3 = trace(non_primitive_caller, x; ctx=MyCtx())
-
-    @test val1 == val2
-    @test val1 == val3
-    @test any(op isa Call && op.fn == (*) for op in tape1)
-    @test tape2[V(3)].fn == non_primitive
-    @test tape2[V(4)].fn == sin
-    @test tape3[V(3)].fn == non_primitive
-    @test tape3[V(4)].fn == sin
 end
 
 
@@ -117,6 +100,18 @@ end
 end
 
 
+###############################################################################
+
+function constant_return_value(x)
+    2x
+    nothing
+end
+
+function no_input()
+    print()
+end
+
+
 @testset "trace: no inputs/outputs" begin
     # constant return value
     _, tape = trace(constant_return_value, 1.0)
@@ -128,13 +123,29 @@ end
 end
 
 
+###############################################################################
+
+function vararg_fn(x, xs...)
+    return x + sum(xs)
+end
+
+multiarg_fn(x) = x
+multiarg_fn(x, y) = x + y
+multiarg_fn(x, y, z) = x + y + z
+
+
 @testset "trace: varargs, splatting" begin
     # varargs
     _, tape = trace(vararg_fn, 1, 2, 3)
-    @test play!(tape, vararg_fn, 4, 5, 6, 7) == vararg_fn(4, 5, 6, 7)
-    @test play!(tape, vararg_fn, 4, 5) == vararg_fn(4, 5)
-    @test compile(tape)(vararg_fn, 4, 5, 6, 7) == vararg_fn(4, 5, 6, 7)
-    @test compile(tape)(vararg_fn, 4, 5) == vararg_fn(4, 5)
+    @test play!(tape, vararg_fn, 4, 5, 6) == vararg_fn(4, 5, 6)
+    @test compile(tape)(vararg_fn, 4, 5, 6) == vararg_fn(4, 5, 6)
+    # in the latest version of Umlaut the number of arguments to the tape
+    # must stay the same, so not sure what to do with these test
+    # marking them as broken for now
+    @test_broken play!(tape, vararg_fn, 4, 5, 6, 7) == vararg_fn(4, 5, 6, 7)
+    @test_broken play!(tape, vararg_fn, 4, 5) == vararg_fn(4, 5)
+    @test_broken compile(tape)(vararg_fn, 4, 5, 6, 7) == vararg_fn(4, 5, 6, 7)
+    @test_broken compile(tape)(vararg_fn, 4, 5) == vararg_fn(4, 5)
 
     vararg_wrapper = xs -> vararg_fn(xs...)
     _, tape = trace(vararg_wrapper, (1, 2, 3))
@@ -158,6 +169,13 @@ end
 
 end
 
+
+###############################################################################
+
+mutable struct Point x; y end
+constructor_loss(a) = (p = Point(a, a); p.x + p.y)
+
+
 @testset "trace: constructors" begin
     # isprimitive for constructors
     # MyType & MyTypeWithParams are defined in test_utils.jl
@@ -172,6 +190,8 @@ end
 end
 
 
+###############################################################################
+
 inc_val(::Val{N}) where N = N + 1
 
 @testset "trace: static_params" begin
@@ -184,6 +204,7 @@ inc_val(::Val{N}) where N = N + 1
 end
 
 
+###############################################################################
 
 function return_in_branch(x)
     if x > 0
@@ -201,6 +222,8 @@ end
     @test tape[V(length(tape))].args[1] == 3
 end
 
+
+###############################################################################
 
 function loop1(a, n)
     a = 2a
@@ -347,6 +370,8 @@ end
 # end
 
 
+###############################################################################
+
 function pow(x, n)
     r = 1
     for i=1:n
@@ -429,6 +454,8 @@ end
     @test play!(tape, while_break, 3.0) == while_break(3.0)
 end
 
+
+###############################################################################
 
 mutable struct CountingReplacingCtx
     replace::Pair

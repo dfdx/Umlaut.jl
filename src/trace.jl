@@ -10,6 +10,9 @@
 # fargtypes :: tuple of function and argument types, e.g. (+, (Int, Int))
 
 
+const VecOrTuple = Union{Tuple, Vector}
+
+
 ###############################################################################
 #                                  Frame                                      #
 ###############################################################################
@@ -259,7 +262,7 @@ end
 rewrite_special_cases(st) = st
 
 
-function get_static_params(t::Tracer, v_fargs)
+function get_static_params(t::Tracer, v_fargs::VecOrTuple)
     fvals = [v isa V ? t.tape[v].val : v for v in v_fargs]
     fn, vals... = fvals
     mi = Base.method_instances(fn, map(Core.Typeof, vals))[1]
@@ -339,15 +342,30 @@ end
 
 
 """
-    get_adjusted_ir!(t::Tracer, v_fargs)
+    method_signature(v_fargs::VecOrTuple)
 
-Adjust tape variables passed to the function to actual function parameters.
-This includes two cases:
-
-* splatted arguments to a call: these are destructured to the tape as separate vars
-* var args in signature: extra arguments are grouped into a tuple on the tape
+Returns method signature as a tuple (f, (arg_typ1, arg_typ2, ...)).
+This signature is suitable for getcode() and which().
 """
-function get_adjusted_ir!(t::Tracer, v_fargs, fargtypes)
+function method_signature(v_fargs::VecOrTuple)
+    fargs = var_values(v_fargs)
+    f, args... = fargs
+    fargtypes = (f, map(Core.Typeof, args))
+    return fargtypes
+end
+
+
+"""
+    unsplat!(t::Tracer, v_fargs::VecOrTuple)
+
+In the lowered form, splatting syntax f(xs...) is represented as
+Core._apply_iterate(f, xs). unsplat!() reverses this change and transformes
+v_fargs to a normal form, possibly destructuring xs into separate variables
+on the tape.
+
+See also: [`group_varargs!()`](@ref)
+"""
+function unsplat!(t::Tracer, v_fargs)
     f = v_fargs[1] isa V ? t.tape[v_fargs[1]] : v_fargs[1]
     # handle splatted arguments
     if f === Core._apply_iterate
@@ -368,11 +386,15 @@ function get_adjusted_ir!(t::Tracer, v_fargs, fargtypes)
             end
         end
         v_fargs = (v_fargs[3], actual_v_args...)
-        fargs = map_vars(v -> v.op.val, v_fargs)
-        fargtypes = (fargs[1], map(Core.Typeof, fargs[2:end]))
     end
+    return v_fargs
+end
+
+
+function group_varargs!(t::Tracer, v_fargs::VecOrTuple)
     v_f, v_args... = v_fargs
-    ir = getcode(fargtypes...)
+    fargtypes = method_signature(v_fargs)
+    # ir = getcode(fargtypes...)
     meth = which(fargtypes...)
     # if the method has varargs, group extra vars into a tuple
     if meth.isva
@@ -383,30 +405,92 @@ function get_adjusted_ir!(t::Tracer, v_fargs, fargtypes)
             v_args = (v_args[1:meth.nargs - 2]..., va)
         end
     end
-    return ir, (v_f, v_args...)
+    return (v_f, v_args...)
 end
 
 
-function trace_composed_function!(t::Tracer, v_fargs)
-    f, args... = var_values(v_fargs)
-    @assert f isa ComposedFunction
-    # TODO: v = trace_call! f.inner(args...)
-    # then return trace_call! f.outer(v)
+# """
+#     get_adjusted_ir!(t::Tracer, v_fargs)
 
-end
+# Adjust tape variables passed to the function to actual function parameters.
+# This includes two cases:
+
+# * splatted arguments to a call: these are destructured to the tape as separate vars
+# * var args in signature: extra arguments are grouped into a tuple on the tape
+# """
+# # TODO: split this into 2 functions
+# function get_adjusted_ir!(t::Tracer, v_fargs)
+#     # f = v_fargs[1] isa V ? t.tape[v_fargs[1]] : v_fargs[1]
+#     ## handle splatted arguments
+#     # if f === Core._apply_iterate
+#     #     # destructure splatted arguments as separate vars onto the tape
+#     #     # or use existing vars if they can be inferred
+#     #     actual_v_args = []
+#     #     for v in v_fargs[4:end]
+#     #         push!(t.tape, mkcall(check_variable_length, v, length(v.op.val), v.id))
+#     #         iter = t.tape[v]
+#     #         is_tuple = iter isa Call && iter.fn === Base.tuple
+#     #         if is_tuple
+#     #             push!(actual_v_args, iter.args...)
+#     #         else
+#     #             for i in eachindex(iter.val)
+#     #                 x = push!(t.tape, mkcall(getindex, v, i))
+#     #                 push!(actual_v_args, x)
+#     #             end
+#     #         end
+#     #     end
+#     #     v_fargs = (v_fargs[3], actual_v_args...)
+#     #     fargs = map_vars(v -> v.op.val, v_fargs)
+#     #     fargtypes = (fargs[1], map(Core.Typeof, fargs[2:end]))
+#     # end
+#     v_fargs = unsplat!(t, v_fargs)
+#     fargs = var_values(v_fargs)
+#     v_f, v_args... = v_fargs
+#     f, args... = fargs
+
+#     fargtypes = (f, map(Core.Typeof, args))
+#     ir = getcode(fargtypes...)
+#     meth = which(fargtypes...)
+#     # if the method has varargs, group extra vars into a tuple
+#     if meth.isva
+#         extra_v_args = v_args[meth.nargs - 1:end]
+#         # don't group the input varargs tuple - we handle it separately
+#         if !(length(extra_v_args) == 1 && t.tape[extra_v_args[1]] isa Input)
+#             va = push!(t.tape, mkcall(tuple, extra_v_args...))
+#             v_args = (v_args[1:meth.nargs - 2]..., va)
+#         end
+#     end
+#     return ir, (v_f, v_args...)
+# end
+
+
+# function trace_composed_function!(t::Tracer, v_fargs)
+#     f, args... = var_values(v_fargs)
+#     @assert f isa ComposedFunction
+#     # TODO: v = trace_call! f.inner(args...)
+#     # then return trace_call! f.outer(v)
+
+# end
 
 
 """
-    trace!(t::Tracer, v_fargs, fargtypes=nothing)
+    trace!(t::Tracer, v_fargs)
 
 Trace call defined by variables in v_fargs.
 """
-function trace!(t::Tracer, v_fargs, fargtypes=nothing)
-    if isnothing(fargtypes)
-        f, args... = var_values(v_fargs)
-        fargtypes = (f, map(Core.Typeof, args))
-    end
-    ir, v_fargs = get_adjusted_ir!(t, v_fargs, fargtypes)
+function trace!(t::Tracer, v_fargs)
+    v_fargs = unsplat!(t, v_fargs)
+    # note: we need to extract IR before vararg grouping, which may change
+    # v_fargs, thus invalidating method search
+    ir = getcode(method_signature(v_fargs)...)
+    v_fargs = group_varargs!(t, v_fargs)
+
+    # ir, v_fargs = get_adjusted_ir!(t, v_fargs)
+    # if v_fargs[1] === (∘)  # TODO: maybe resolve f
+    #     # note: we have to record it here and not in trace_call!()
+    #     # because get_adjusted_ir() is only called in trace!()
+    #     return record_primitive!(t.tape, v_fargs...)
+    # end
     # if v_fargs[1] === ∘  # TODO: also handle var case
     #     global STATE = t, v_fargs
     #     error("HERE")
@@ -528,21 +612,22 @@ Advanced:
 
 
 """
-function trace(f, args...; ctx=BaseCtx(), fargtypes=nothing, deprecated_kws...)
+function trace(f, args...; ctx=BaseCtx(), deprecated_kws...)
     warn_deprecated_keywords(deprecated_kws)
-    if isnothing(fargtypes)
-        # we use fargtypes to find the IR and the method
-        # even when the mapping between tape variables and function parameters
-        # is more involved (e.g. varargs are grouped into a single tuple)
-        fargtypes = (f, map(Core.Typeof, args))
-    end
+    # if isnothing(fargtypes)
+    #     # we use fargtypes to find the IR and the method
+    #     # even when the mapping between tape variables and function parameters
+    #     # is more involved (e.g. varargs are grouped into a single tuple)
+    #     fargtypes = (f, map(Core.Typeof, args))
+    # end
     t = Tracer(Tape(ctx))
-    meth = which(fargtypes...)
-    xargs = meth.isva ? (args[1:meth.nargs - 2]..., args[meth.nargs - 1:end]) : args
-    t.tape.meta[:isva] = meth.isva
-    v_fargs = inputs!(t.tape, f, xargs...)
+    v_fargs = inputs!(t.tape, f, args...)
+    # meth = which(method_signature((f, args...))...)
+    # xargs = meth.isva ? (args[1:meth.nargs - 2]..., args[meth.nargs - 1:end]) : args
+    # t.tape.meta[:isva] = meth.isva
+    # v_fargs = inputs!(t.tape, f, xargs...)
     try
-        rv = trace!(t, v_fargs, fargtypes)
+        rv = trace!(t, v_fargs)
         t.tape.result = rv
         return t.tape[t.tape.result].val, t.tape
     catch
@@ -562,7 +647,7 @@ get_latest_tracer() = LATEST_TRACER[]
 function get_latest_tracer_state()
     t = get_latest_tracer()
     frame = t.stack[end]
-    return t, frame.ci, frame.v_fargs
+    return t, frame.ir, frame.v_fargs
 end
 
 function print_stack_trace()
