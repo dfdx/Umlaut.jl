@@ -233,20 +233,12 @@ end
 Tracer(tape::Tape{C}) where C = Tracer{C}(tape, [])
 
 
-function _getcode(f, argtypes)
+function getcode(f, argtypes)
     irs = code_ircode_by_signature(no_pass, Tuple{Core.Typeof(f), argtypes...})
     @assert !isempty(irs) "No IR found for $f($argtypes...)"
     @assert length(irs) == 1 "More than one IR found for $f($argtypes...)"
     return irs[1][1]
 end
-
-
-"""
-    getcode(ctx, f, argtypes)
-
-Get IR of a method. Can be customized via ctx argument.
-"""
-getcode(ctx, f, argtypes) = _getcode(f, argtypes)
 
 
 macro getcode(ex)
@@ -255,7 +247,7 @@ macro getcode(ex)
         _f = $(esc(f))
         _args = $(esc(args))
         fargtypes = (_f, map(Core.Typeof, _args))
-        return _getcode(fargtypes...)
+        return getcode(fargtypes...)
     end
 end
 
@@ -350,12 +342,12 @@ end
 
 
 """
-    method_signature(v_fargs::VecOrTuple)
+    code_signature(ctx, v_fargs::VecOrTuple)
 
-Returns method signature as a tuple (f, (arg_typ1, arg_typ2, ...)).
+Returns method signature as a tuple (f, (arg1_typ, arg2_typ, ...)).
 This signature is suitable for getcode() and which().
 """
-function method_signature(v_fargs::VecOrTuple)
+function code_signature(ctx, v_fargs::VecOrTuple)
     fargs = var_values(v_fargs)
     f, args... = fargs
     fargtypes = (f, map(Core.Typeof, args))
@@ -401,7 +393,7 @@ end
 
 function group_varargs!(t::Tracer, v_fargs::VecOrTuple)
     v_f, v_args... = v_fargs
-    fargtypes = method_signature(v_fargs)
+    fargtypes = code_signature(t.tape.c, v_fargs)
     # ir = getcode(fargtypes...)
     meth = which(fargtypes...)
     # if the method has varargs, group extra vars into a tuple
@@ -490,7 +482,7 @@ function trace!(t::Tracer, v_fargs)
     v_fargs = unsplat!(t, v_fargs)
     # note: we need to extract IR before vararg grouping, which may change
     # v_fargs, thus invalidating method search
-    ir = getcode(t.tape.c, method_signature(v_fargs)...)
+    ir = getcode(code_signature(t.tape.c, v_fargs)...)
     v_fargs = group_varargs!(t, v_fargs)
 
     # ir, v_fargs = get_adjusted_ir!(t, v_fargs)
