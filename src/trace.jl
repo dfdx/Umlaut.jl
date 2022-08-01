@@ -235,8 +235,8 @@ Tracer(tape::Tape{C}) where C = Tracer{C}(tape, [])
 
 function _getcode(f, argtypes)
     irs = code_ircode_by_signature(no_pass, Tuple{Core.Typeof(f), argtypes...})
-    @assert !isempty(irs) "No IR found for types $argtypes"
-    @assert length(irs) == 1 "More than one IR found for types $argtypes"
+    @assert !isempty(irs) "No IR found for $f($argtypes...)"
+    @assert length(irs) == 1 "More than one IR found for $f($argtypes...)"
     return irs[1][1]
 end
 
