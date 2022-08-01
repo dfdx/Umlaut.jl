@@ -233,12 +233,20 @@ end
 Tracer(tape::Tape{C}) where C = Tracer{C}(tape, [])
 
 
-function getcode(f, argtypes)
+function _getcode(f, argtypes)
     irs = code_ircode_by_signature(no_pass, Tuple{Core.Typeof(f), argtypes...})
     @assert !isempty(irs) "No IR found for types $argtypes"
     @assert length(irs) == 1 "More than one IR found for types $argtypes"
     return irs[1][1]
 end
+
+
+"""
+    getcode(ctx, f, argtypes)
+
+Get IR of a method. Can be customized via ctx argument.
+"""
+getcode(ctx, f, argtypes) = _getcode(f, argtypes)
 
 
 macro getcode(ex)
@@ -247,7 +255,7 @@ macro getcode(ex)
         _f = $(esc(f))
         _args = $(esc(args))
         fargtypes = (_f, map(Core.Typeof, _args))
-        return getcode(fargtypes...)
+        return _getcode(fargtypes...)
     end
 end
 
@@ -400,10 +408,10 @@ function group_varargs!(t::Tracer, v_fargs::VecOrTuple)
     if meth.isva
         extra_v_args = v_args[meth.nargs - 1:end]
         # don't group the input varargs tuple - we handle it separately
-        if !(length(extra_v_args) == 1 && t.tape[extra_v_args[1]] isa Input)
-            va = push!(t.tape, mkcall(tuple, extra_v_args...))
-            v_args = (v_args[1:meth.nargs - 2]..., va)
-        end
+        # if !(length(extra_v_args) == 1 && t.tape[extra_v_args[1]] isa Input)
+        va = push!(t.tape, mkcall(tuple, extra_v_args...))
+        v_args = (v_args[1:meth.nargs - 2]..., va)
+        # end
     end
     return (v_f, v_args...)
 end
@@ -482,7 +490,7 @@ function trace!(t::Tracer, v_fargs)
     v_fargs = unsplat!(t, v_fargs)
     # note: we need to extract IR before vararg grouping, which may change
     # v_fargs, thus invalidating method search
-    ir = getcode(method_signature(v_fargs)...)
+    ir = _getcode(method_signature(v_fargs)...)
     v_fargs = group_varargs!(t, v_fargs)
 
     # ir, v_fargs = get_adjusted_ir!(t, v_fargs)
