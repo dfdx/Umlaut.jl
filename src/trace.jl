@@ -490,7 +490,7 @@ function trace!(t::Tracer, v_fargs)
     v_fargs = unsplat!(t, v_fargs)
     # note: we need to extract IR before vararg grouping, which may change
     # v_fargs, thus invalidating method search
-    ir = _getcode(method_signature(v_fargs)...)
+    ir = getcode(t.tape.c, method_signature(v_fargs)...)
     v_fargs = group_varargs!(t, v_fargs)
 
     # ir, v_fargs = get_adjusted_ir!(t, v_fargs)
