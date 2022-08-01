@@ -342,12 +342,12 @@ end
 
 
 """
-    code_signature(ctx, v_fargs::VecOrTuple)
+    code_signature(ctx, v_fargs)
 
 Returns method signature as a tuple (f, (arg1_typ, arg2_typ, ...)).
 This signature is suitable for getcode() and which().
 """
-function code_signature(ctx, v_fargs::VecOrTuple)
+function code_signature(ctx, v_fargs)
     fargs = var_values(v_fargs)
     f, args... = fargs
     fargtypes = (f, map(Core.Typeof, args))
@@ -356,7 +356,7 @@ end
 
 
 """
-    unsplat!(t::Tracer, v_fargs::VecOrTuple)
+    unsplat!(t::Tracer, v_fargs)
 
 In the lowered form, splatting syntax f(xs...) is represented as
 Core._apply_iterate(f, xs). unsplat!() reverses this change and transformes
@@ -391,7 +391,7 @@ function unsplat!(t::Tracer, v_fargs)
 end
 
 
-function group_varargs!(t::Tracer, v_fargs::VecOrTuple)
+function group_varargs!(t::Tracer, v_fargs)
     v_f, v_args... = v_fargs
     fargtypes = code_signature(t.tape.c, v_fargs)
     # ir = getcode(fargtypes...)
