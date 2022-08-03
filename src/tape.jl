@@ -169,6 +169,9 @@ function map_vars(fn::Function, args::Union{Vector,Tuple})
 end
 
 
+var_values(vs) = map_vars(v -> v.op.val, vs)
+
+
 """
     mkcall(fn, args...; val=missing, kwargs...)
 

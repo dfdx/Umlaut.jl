@@ -10,6 +10,9 @@
 # fargtypes :: tuple of function and argument types, e.g. (+, (Int, Int))
 
 
+const VecOrTuple = Union{Tuple, Vector}
+
+
 ###############################################################################
 #                                  Frame                                      #
 ###############################################################################
@@ -147,8 +150,9 @@ function isprimitive(ctx::BaseCtx, f, args...)
     if isempty(ctx.primitives)
         f in (__new__, Colon(), Base.Generator) && return true
         f isa NamedTuple && return true
-        modl = module_of(f)
-        modl in (Base, Core, Core.Intrinsics, Broadcast, Statistics, LinearAlgebra) && return true
+        (f isa ComposedFunction || f === (∘)) && return false
+        modl = module_of(f, args...)
+        modl in (Base, Base.Math, Core, Core.Intrinsics, Broadcast, Statistics, LinearAlgebra) && return true
         return false
     else
         return f in ctx.primitives
@@ -176,9 +180,11 @@ that Umlaut knows how to trace and its functional argument is a non-primitive.
 were non-primitives.
 """
 function is_ho_tracable(ctx::Any, fargs...)
-    if fargs[1] === Core._apply_iterate && !isprimitive(ctx, fargs[3:end]...)
+    f = fargs[1]
+    if f === Core._apply_iterate && !isprimitive(ctx, fargs[3:end]...)
         return true
     end
+
     return false
 end
 
@@ -229,8 +235,8 @@ Tracer(tape::Tape{C}) where C = Tracer{C}(tape, [])
 
 function getcode(f, argtypes)
     irs = code_ircode_by_signature(no_pass, Tuple{Core.Typeof(f), argtypes...})
-    @assert !isempty(irs) "No IR found for types $argtypes"
-    @assert length(irs) == 1 "More than one IR found for types $argtypes"
+    @assert !isempty(irs) "No IR found for $f($argtypes...)"
+    @assert length(irs) == 1 "More than one IR found for $f($argtypes...)"
     return irs[1][1]
 end
 
@@ -240,7 +246,7 @@ macro getcode(ex)
     return quote
         _f = $(esc(f))
         _args = $(esc(args))
-        fargtypes = (_f, map(Core.Typeof, args))
+        fargtypes = (_f, map(Core.Typeof, _args))
         return getcode(fargtypes...)
     end
 end
@@ -256,7 +262,7 @@ end
 rewrite_special_cases(st) = st
 
 
-function get_static_params(t::Tracer, v_fargs)
+function get_static_params(t::Tracer, v_fargs::VecOrTuple)
     fvals = [v isa V ? t.tape[v].val : v for v in v_fargs]
     fn, vals... = fvals
     mi = Base.method_instances(fn, map(Core.Typeof, vals))[1]
@@ -272,7 +278,7 @@ The default implementation checks if the call is a primitive and either
 records it to the tape or recurses into it.
 """
 function trace_call!(t::Tracer{C}, vs...) where C
-    fargs = [v isa V ? t.tape[v].val : v for v in vs]
+    fargs = var_values(vs)
     if isprimitive(t.tape.c, fargs...) && !is_ho_tracable(t.tape.c, fargs...)
         return record_primitive!(t.tape, vs...)
     else
@@ -336,16 +342,30 @@ end
 
 
 """
-    get_adjusted_ir!(t::Tracer, v_fargs)
+    code_signature(ctx, v_fargs)
 
-Adjust tape variables passed to the function to actual function parameters.
-This includes two cases:
-
-* splatted arguments to a call: these are destructured to the tape as separate vars
-* var args in signature: extra arguments are grouped into a tuple on the tape
+Returns method signature as a tuple (f, (arg1_typ, arg2_typ, ...)).
+This signature is suitable for getcode() and which().
 """
-function get_adjusted_ir!(t::Tracer, v_fargs, fargtypes)
-    # global STATE = t, v_fargs, fargtypes
+function code_signature(ctx, v_fargs)
+    fargs = var_values(v_fargs)
+    f, args... = fargs
+    fargtypes = (f, map(Core.Typeof, args))
+    return fargtypes
+end
+
+
+"""
+    unsplat!(t::Tracer, v_fargs)
+
+In the lowered form, splatting syntax f(xs...) is represented as
+Core._apply_iterate(f, xs). unsplat!() reverses this change and transformes
+v_fargs to a normal form, possibly destructuring xs into separate variables
+on the tape.
+
+See also: [`group_varargs!()`](@ref)
+"""
+function unsplat!(t::Tracer, v_fargs)
     f = v_fargs[1] isa V ? t.tape[v_fargs[1]] : v_fargs[1]
     # handle splatted arguments
     if f === Core._apply_iterate
@@ -366,36 +386,40 @@ function get_adjusted_ir!(t::Tracer, v_fargs, fargtypes)
             end
         end
         v_fargs = (v_fargs[3], actual_v_args...)
-        fargs = map_vars(v -> v.op.val, v_fargs)
-        fargtypes = (fargs[1], map(Core.Typeof, fargs[2:end]))
     end
+    return v_fargs
+end
+
+
+function group_varargs!(t::Tracer, v_fargs)
     v_f, v_args... = v_fargs
-    ir = getcode(fargtypes...)
+    fargtypes = code_signature(t.tape.c, v_fargs)
+    # ir = getcode(fargtypes...)
     meth = which(fargtypes...)
     # if the method has varargs, group extra vars into a tuple
     if meth.isva
         extra_v_args = v_args[meth.nargs - 1:end]
         # don't group the input varargs tuple - we handle it separately
-        if !(length(extra_v_args) == 1 && t.tape[extra_v_args[1]] isa Input)
-            va = push!(t.tape, mkcall(tuple, extra_v_args...))
-            v_args = (v_args[1:meth.nargs - 2]..., va)
-        end
+        # if !(length(extra_v_args) == 1 && t.tape[extra_v_args[1]] isa Input)
+        va = push!(t.tape, mkcall(tuple, extra_v_args...))
+        v_args = (v_args[1:meth.nargs - 2]..., va)
+        # end
     end
-    return ir, (v_f, v_args...)
+    return (v_f, v_args...)
 end
 
 
 """
-    trace!(t::Tracer, v_fargs, fargtypes=nothing)
+    trace!(t::Tracer, v_fargs)
 
 Trace call defined by variables in v_fargs.
 """
-function trace!(t::Tracer, v_fargs, fargtypes=nothing)
-    if isnothing(fargtypes)
-        f, args... = map_vars(v -> t.tape[v].val, v_fargs)
-        fargtypes = (f, map(Core.Typeof, args))
-    end
-    ir, v_fargs = get_adjusted_ir!(t, v_fargs, fargtypes)
+function trace!(t::Tracer, v_fargs)
+    v_fargs = unsplat!(t, v_fargs)
+    # note: we need to extract IR before vararg grouping, which may change
+    # v_fargs, thus invalidating method search
+    ir = getcode(code_signature(t.tape.c, v_fargs)...)
+    v_fargs = group_varargs!(t, v_fargs)
     frame = Frame(t.tape, ir, v_fargs...)
     push!(t.stack, frame)
     sparams = get_static_params(t, v_fargs)
@@ -508,21 +532,12 @@ Advanced:
 
 
 """
-function trace(f, args...; ctx=BaseCtx(), fargtypes=nothing, deprecated_kws...)
+function trace(f, args...; ctx=BaseCtx(), deprecated_kws...)
     warn_deprecated_keywords(deprecated_kws)
-    if isnothing(fargtypes)
-        # we use fargtypes to find the IR and the method
-        # even when the mapping between tape variables and function parameters
-        # is more involved (e.g. varargs are grouped into a single tuple)
-        fargtypes = (f, map(Core.Typeof, args))
-    end
     t = Tracer(Tape(ctx))
-    meth = which(fargtypes...)
-    xargs = meth.isva ? (args[1:meth.nargs - 2]..., args[meth.nargs - 1:end]) : args
-    t.tape.meta[:isva] = meth.isva
-    v_fargs = inputs!(t.tape, f, xargs...)
+    v_fargs = inputs!(t.tape, f, args...)
     try
-        rv = trace!(t, v_fargs, fargtypes)
+        rv = trace!(t, v_fargs)
         t.tape.result = rv
         return t.tape[t.tape.result].val, t.tape
     catch
@@ -542,7 +557,7 @@ get_latest_tracer() = LATEST_TRACER[]
 function get_latest_tracer_state()
     t = get_latest_tracer()
     frame = t.stack[end]
-    return t, frame.ci, frame.v_fargs
+    return t, frame.ir, frame.v_fargs
 end
 
 function print_stack_trace()
