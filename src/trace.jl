@@ -409,70 +409,6 @@ function group_varargs!(t::Tracer, v_fargs)
 end
 
 
-# """
-#     get_adjusted_ir!(t::Tracer, v_fargs)
-
-# Adjust tape variables passed to the function to actual function parameters.
-# This includes two cases:
-
-# * splatted arguments to a call: these are destructured to the tape as separate vars
-# * var args in signature: extra arguments are grouped into a tuple on the tape
-# """
-# # TODO: split this into 2 functions
-# function get_adjusted_ir!(t::Tracer, v_fargs)
-#     # f = v_fargs[1] isa V ? t.tape[v_fargs[1]] : v_fargs[1]
-#     ## handle splatted arguments
-#     # if f === Core._apply_iterate
-#     #     # destructure splatted arguments as separate vars onto the tape
-#     #     # or use existing vars if they can be inferred
-#     #     actual_v_args = []
-#     #     for v in v_fargs[4:end]
-#     #         push!(t.tape, mkcall(check_variable_length, v, length(v.op.val), v.id))
-#     #         iter = t.tape[v]
-#     #         is_tuple = iter isa Call && iter.fn === Base.tuple
-#     #         if is_tuple
-#     #             push!(actual_v_args, iter.args...)
-#     #         else
-#     #             for i in eachindex(iter.val)
-#     #                 x = push!(t.tape, mkcall(getindex, v, i))
-#     #                 push!(actual_v_args, x)
-#     #             end
-#     #         end
-#     #     end
-#     #     v_fargs = (v_fargs[3], actual_v_args...)
-#     #     fargs = map_vars(v -> v.op.val, v_fargs)
-#     #     fargtypes = (fargs[1], map(Core.Typeof, fargs[2:end]))
-#     # end
-#     v_fargs = unsplat!(t, v_fargs)
-#     fargs = var_values(v_fargs)
-#     v_f, v_args... = v_fargs
-#     f, args... = fargs
-
-#     fargtypes = (f, map(Core.Typeof, args))
-#     ir = getcode(fargtypes...)
-#     meth = which(fargtypes...)
-#     # if the method has varargs, group extra vars into a tuple
-#     if meth.isva
-#         extra_v_args = v_args[meth.nargs - 1:end]
-#         # don't group the input varargs tuple - we handle it separately
-#         if !(length(extra_v_args) == 1 && t.tape[extra_v_args[1]] isa Input)
-#             va = push!(t.tape, mkcall(tuple, extra_v_args...))
-#             v_args = (v_args[1:meth.nargs - 2]..., va)
-#         end
-#     end
-#     return ir, (v_f, v_args...)
-# end
-
-
-# function trace_composed_function!(t::Tracer, v_fargs)
-#     f, args... = var_values(v_fargs)
-#     @assert f isa ComposedFunction
-#     # TODO: v = trace_call! f.inner(args...)
-#     # then return trace_call! f.outer(v)
-
-# end
-
-
 """
     trace!(t::Tracer, v_fargs)
 
@@ -484,22 +420,6 @@ function trace!(t::Tracer, v_fargs)
     # v_fargs, thus invalidating method search
     ir = getcode(code_signature(t.tape.c, v_fargs)...)
     v_fargs = group_varargs!(t, v_fargs)
-
-    # ir, v_fargs = get_adjusted_ir!(t, v_fargs)
-    # if v_fargs[1] === (∘)  # TODO: maybe resolve f
-    #     # note: we have to record it here and not in trace_call!()
-    #     # because get_adjusted_ir() is only called in trace!()
-    #     return record_primitive!(t.tape, v_fargs...)
-    # end
-    # if v_fargs[1] === ∘  # TODO: also handle var case
-    #     global STATE = t, v_fargs
-    #     error("HERE")
-    #     # TODO: make ∘ non-primitive
-    #     # TODO: implement trace_compose!
-    #     # Noooooo! We can't trace compose yet because here we are just
-    #     # building a CompositeFunction, but not applying it!
-    #     return trace_composed_function!(t, v_fargs)
-    # end
     frame = Frame(t.tape, ir, v_fargs...)
     push!(t.stack, frame)
     sparams = get_static_params(t, v_fargs)
@@ -614,18 +534,8 @@ Advanced:
 """
 function trace(f, args...; ctx=BaseCtx(), deprecated_kws...)
     warn_deprecated_keywords(deprecated_kws)
-    # if isnothing(fargtypes)
-    #     # we use fargtypes to find the IR and the method
-    #     # even when the mapping between tape variables and function parameters
-    #     # is more involved (e.g. varargs are grouped into a single tuple)
-    #     fargtypes = (f, map(Core.Typeof, args))
-    # end
     t = Tracer(Tape(ctx))
     v_fargs = inputs!(t.tape, f, args...)
-    # meth = which(method_signature((f, args...))...)
-    # xargs = meth.isva ? (args[1:meth.nargs - 2]..., args[meth.nargs - 1:end]) : args
-    # t.tape.meta[:isva] = meth.isva
-    # v_fargs = inputs!(t.tape, f, xargs...)
     try
         rv = trace!(t, v_fargs)
         t.tape.result = rv
