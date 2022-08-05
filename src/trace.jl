@@ -401,7 +401,7 @@ function group_varargs!(t::Tracer, v_fargs)
         extra_v_args = v_args[meth.nargs - 1:end]
         # don't group the input varargs tuple - we handle it separately
         # if !(length(extra_v_args) == 1 && t.tape[extra_v_args[1]] isa Input)
-        va = push!(t.tape, mkcall(tuple, extra_v_args...))
+        va = record_primitive!(t.tape, tuple, extra_v_args...)
         v_args = (v_args[1:meth.nargs - 2]..., va)
         # end
     end
