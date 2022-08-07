@@ -7,9 +7,9 @@ import Umlaut: Tape, V, inputs!, rebind!, mkcall, primitivize!
     tape = Tape()
     _, v1 = inputs!(tape, nothing, x)
     @test mkcall(sum, v1).val == sum(x)
-    @test mkcall(sum, v1; dims=1).val == sum(x; dims=1)
-    @test mkcall(sum, v1; dims=2).val == sum(x; dims=2)
-    @test mkcall(sum, v1; dims=1, val=1.0).val == 1.0
+    @test mkcall(sum, v1; kwargs=(dims=1,)).val == sum(x; dims=1)
+    @test mkcall(sum, v1; kwargs=(dims=2,)).val == sum(x; dims=2)
+    @test mkcall(sum, v1; kwargs=(dims=1,), val=1.0).val == 1.0
 
     # rebind!
     tape = Tape()

@@ -217,7 +217,10 @@ duing the tracing:
 
 See also: [`isprimitive()`](@ref)
 """
-record_primitive!(tape::Tape, v_fargs...) = push!(tape, mkcall(v_fargs...))
+function record_primitive!(tape::Tape, v_fargs...)
+    line = get(tape.meta, :line, nothing)
+    push!(tape, mkcall(v_fargs...; line=line))
+end
 
 
 ###############################################################################
@@ -305,7 +308,9 @@ function trace_block!(t::Tracer, ir::IRCode, bi::Integer, prev_bi::Integer, spar
         elseif Meta.isexpr(ex, :call)
             vs = resolve_tape_vars(frame, ex.args...)
             vs = [Meta.isexpr(x, :static_parameter) ? sparams[x.args[1]] : x for x in vs]
+            t.tape.meta[:line] = ir.linetable[ir.stmts.line[pc]]
             v = trace_call!(t, vs...)
+            t.tape.meta[:line] = nothing
             frame.ir2tape[SSAValue(pc)] = v
         elseif ex isa Core.PhiNode
             # map current pc to the currently active value of Phi node
@@ -373,14 +378,15 @@ function unsplat!(t::Tracer, v_fargs)
         # or use existing vars if they can be inferred
         actual_v_args = []
         for v in v_fargs[4:end]
-            push!(t.tape, mkcall(check_variable_length, v, length(v.op.val), v.id))
+            check_call = mkcall(check_variable_length, v, length(v.op.val), v.id; line="Umlaut.unsplat!")
+            push!(t.tape, check_call)
             iter = t.tape[v]
             is_tuple = iter isa Call && iter.fn === Base.tuple
             if is_tuple
                 push!(actual_v_args, iter.args...)
             else
                 for i in eachindex(iter.val)
-                    x = push!(t.tape, mkcall(getindex, v, i))
+                    x = push!(t.tape, mkcall(getindex, v, i; line="Umlaut.unsplat!"))
                     push!(actual_v_args, x)
                 end
             end
