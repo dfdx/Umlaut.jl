@@ -246,8 +246,8 @@ macro getcode(ex)
     return quote
         _f = $(esc(f))
         _args = $(esc(args))
-        fargtypes = (_f, map(Core.Typeof, _args))
-        return getcode(fargtypes...)
+        argtypes = map(Core.Typeof, _args)
+        getcode(_f, argtypes)
     end
 end
 
