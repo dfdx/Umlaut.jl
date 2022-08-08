@@ -41,7 +41,8 @@ function show_compact(io::IO, tape::Tape{C}) where C
             if destructured
                 out_vars_str = join(out_vars, ", ")
                 arg_str = join(op.args, ", ")
-                println(io, "  $out_vars_str = [%$(op.id)] = $(op.fn)($arg_str)")
+                line_str = SHOW_CONFIG.line && !isnothing(op.line) ? "\t\t# $(format_lineinfo(op.line))" : ""
+                println(io, "  $out_vars_str = [%$(op.id)] = $(op.fn)($arg_str) $line_str")
             else
                 println(io, "  $op")
             end
