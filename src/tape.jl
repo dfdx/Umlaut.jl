@@ -147,8 +147,9 @@ mutable struct Call{T} <: AbstractOp
     fn::T
     args::Vector{Any}   # vector of Variables or const values
     tape
+    line
 end
-Call(id, val, fn::T, args) where T = Call{T}(id, val, fn, args, nothing)
+Call(id, val, fn::T, args; line=nothing) where T = Call{T}(id, val, fn, args, nothing, line)
 
 pretty_type_name(T) = sprint(show, T)
 pretty_type_name(T::Type{<:Broadcast.Broadcasted}) = "Broadcasted{}"
@@ -156,7 +157,8 @@ pretty_type_name(T::Type{<:Broadcast.Broadcasted}) = "Broadcasted{}"
 function Base.show(io::IO, op::Call)
     arg_str = join([sprint(show, v) for v in op.args], ", ")
     typ_str = pretty_type_name(op.typ)
-    print(io, "%$(op.id) = $(op.fn)($arg_str)::$typ_str")
+    line_str = SHOW_CONFIG.line && !isnothing(op.line) ? "\t\t# $(format_lineinfo(op.line))" : ""
+    print(io, "%$(op.id) = $(op.fn)($arg_str)::$typ_str $line_str")
 end
 
 
@@ -173,13 +175,16 @@ var_values(vs) = map_vars(v -> v.op.val, vs)
 
 
 """
-    mkcall(fn, args...; val=missing, kwargs...)
+    mkcall(fn, args...; val=missing, kwargs=(;))
 
 Convenient constructor for Call operation. If val is `missing` (default)
 and call value can be calculated from (bound) variables and constants,
 they are calculated. To prevent this behavior, set val to some neutral value.
 """
-function mkcall(fn, args...; val=missing, kwargs...)
+function mkcall(fn, args...; val=missing, line=nothing, kwargs=(;), free_kwargs...)
+    if !isempty(free_kwargs)
+        @error "Free keyword arguments to mkcall are discontinued, use kwargs=(...;) instead"
+    end
     kwargs = NamedTuple(kwargs)
     if !isempty(kwargs)
         args = (kwargs, fn, args...)
@@ -191,14 +196,14 @@ function mkcall(fn, args...; val=missing, kwargs...)
         (a._op !== nothing && a._op.val !== missing),  # bound variable
         fargs
     )
-    if val === missing && calculable
+    if ismissing(val) && calculable
         fargs_ = map_vars(v -> v._op.val, fargs)
         fn_, args_ = fargs_[1], fargs_[2:end]
         val_ = fn_(args_...)
     else
         val_ = val
     end
-    return Call(0, val_, fn, [args...])
+    return Call(0, val_, fn, [args...]; line=line)
 end
 
 
@@ -247,19 +252,9 @@ function Tape(
 end
 
 
-const SHOW_FORMAT = Ref(:plain)
-show_format!(val) = (SHOW_FORMAT[] = val)
-
-
 function Base.show(io::IO, tape::Tape{C}) where C
-    if SHOW_FORMAT[] == :compact
-        show_compact(io, tape)
-    else
-        println(io, "Tape{$C}")
-        for op in tape.ops
-            println(io, "  ", op)
-        end
-    end
+    # defined in pretty.jl
+    show(io, tape, SHOW_CONFIG)
 end
 
 
@@ -575,11 +570,6 @@ function exec!(tape::Tape, op::Loop)
     vi0 = length(op.parent_inputs) + 1
     vi = vi0
     while true
-        # @show vi
-        # @show subtape[V(1)].val
-        # @show subtape[V(2)].val
-        # @show subtape[V(7)].val
-        # sleep(1)
         exec!(subtape, subtape[V(vi)])
         if vi == cond_var.id && subtape[V(vi)].val == false
             actual_exit_vars = loop_exit_vars_at_point(op, vi)

@@ -1,7 +1,7 @@
 name = "Umlaut"
 uuid = "92992a2b-8ce5-4a9c-bb9d-58be9a7dc841"
 authors = ["Andrei Zhabinski <andrei.zhabinski@gmail.com>"]
-version = "0.4.1"
+version = "0.4.2"
 
 [deps]
 CompilerPluginTools = "6b7a57c9-7cc1-4fdf-b7f5-e857abae3638"
