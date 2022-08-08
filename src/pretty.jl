@@ -1,3 +1,13 @@
+mutable struct ShowConfig
+    compact::Bool
+    line::Bool
+end
+
+const SHOW_CONFIG = ShowConfig(false, false)
+
+
+
+
 format_lineinfo(line::Core.LineInfoNode) = "$(line.module).$(line.method) at $(line.file):$(line.line)"
 format_lineinfo(line) = line
 
@@ -42,24 +52,9 @@ function show_compact(io::IO, tape::Tape{C}) where C
 end
 
 
-function show_verbose(io::IO, tape::Tape{C}) where C
-    println(io, "Tape{$C}")
-    for op in tape.ops
-        if op isa Call
-            line_str = !isnothing(op.line) ? "\t\t# $(format_lineinfo(op.line))" : ""
-            println(io, "  ", op, line_str)
-        else
-            println(io, "  ", op)
-        end
-    end
-end
-
-
-function Base.show(io::IO, tape::Tape{C}, fmt) where C
-    if fmt == :compact
+function Base.show(io::IO, tape::Tape{C}, config) where C
+    if config.compact
         show_compact(io, tape)
-    elseif fmt == :verbose
-        show_verbose(io, tape)
     else
         println(io, "Tape{$C}")
         for op in tape.ops

@@ -157,7 +157,8 @@ pretty_type_name(T::Type{<:Broadcast.Broadcasted}) = "Broadcasted{}"
 function Base.show(io::IO, op::Call)
     arg_str = join([sprint(show, v) for v in op.args], ", ")
     typ_str = pretty_type_name(op.typ)
-    print(io, "%$(op.id) = $(op.fn)($arg_str)::$typ_str")
+    line_str = SHOW_CONFIG.line && !isnothing(op.line) ? "\t\t# $(format_lineinfo(op.line))" : ""
+    print(io, "%$(op.id) = $(op.fn)($arg_str)::$typ_str $line_str")
 end
 
 
@@ -251,13 +252,9 @@ function Tape(
 end
 
 
-const SHOW_FORMAT = Ref(:plain)
-show_format!(val) = (SHOW_FORMAT[] = val)
-
-
 function Base.show(io::IO, tape::Tape{C}) where C
     # defined in pretty.jl
-    show(io, tape, SHOW_FORMAT[])
+    show(io, tape, SHOW_CONFIG)
 end
 
 
