@@ -154,14 +154,10 @@ Call(id, val, fn::T, args; line=nothing) where T = Call{T}(id, val, fn, args, no
 pretty_type_name(T) = sprint(show, T)
 pretty_type_name(T::Type{<:Broadcast.Broadcasted}) = "Broadcasted{}"
 
-format_lineinfo(line::Core.LineInfoNode) = "$(line.module).$(line.method) at $(line.file):$(line.line)"
-format_lineinfo(line) = line
-
 function Base.show(io::IO, op::Call)
     arg_str = join([sprint(show, v) for v in op.args], ", ")
     typ_str = pretty_type_name(op.typ)
-    line_str = !isnothing(op.line) ? "\t\t# $(format_lineinfo(op.line))" : ""
-    print(io, "%$(op.id) = $(op.fn)($arg_str)::$typ_str $line_str")
+    print(io, "%$(op.id) = $(op.fn)($arg_str)::$typ_str")
 end
 
 
@@ -260,14 +256,8 @@ show_format!(val) = (SHOW_FORMAT[] = val)
 
 
 function Base.show(io::IO, tape::Tape{C}) where C
-    if SHOW_FORMAT[] == :compact
-        show_compact(io, tape)
-    else
-        println(io, "Tape{$C}")
-        for op in tape.ops
-            println(io, "  ", op)
-        end
-    end
+    # defined in pretty.jl
+    show(io, tape, SHOW_FORMAT[])
 end
 
 
