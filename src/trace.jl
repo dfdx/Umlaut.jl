@@ -308,6 +308,7 @@ function trace_block!(t::Tracer, ir::IRCode, bi::Integer, prev_bi::Integer, spar
         elseif Meta.isexpr(ex, :call)
             vs = resolve_tape_vars(frame, ex.args...)
             vs = [Meta.isexpr(x, :static_parameter) ? sparams[x.args[1]] : x for x in vs]
+            vs = unsplat!(t, vs)
             t.tape.meta[:line] = ir.linetable[ir.stmts.line[pc]]
             v = trace_call!(t, vs...)
             t.tape.meta[:line] = nothing

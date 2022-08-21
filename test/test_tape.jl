@@ -42,6 +42,7 @@ import Umlaut: Tape, V, inputs!, rebind!, mkcall, primitivize!
     v1, v2 = insert!(tape, 4, ops...)
     @test r.id == 6
     @test dct[r] == :r
+    @test dct[V(tape, 6)] == :r
 
     tape[r] = mkcall(*, v1, v2)
     @test tape[r].val == 18.0

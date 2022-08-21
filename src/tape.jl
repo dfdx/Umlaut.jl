@@ -23,11 +23,10 @@ See also: [`bound`](@ref)
 mutable struct Variable
     _id::Union{<:Integer,Nothing}
     _op::Union{AbstractOp,Nothing}
-    _hash::Union{UInt64, Nothing}
 end
 
-Variable(id::Integer) = Variable(id, nothing, nothing)
-Variable(op::AbstractOp) = Variable(nothing, op, nothing)
+Variable(id::Integer) = Variable(id, nothing)
+Variable(op::AbstractOp) = Variable(nothing, op)
 
 Base.show(io::IO, v::Variable) = print(io, "%$(v.id)")
 
@@ -71,13 +70,7 @@ function Base.:(==)(v1::Variable, v2::Variable)
 end
 
 function Base.hash(v::Variable, h::UInt)
-    # note that the hash is calculated only once and stored as a field
-    # this way we can safely put variables into a Dict
-    if isnothing(v._hash)
-        h = hash(v.id, hash(v._op, h))
-        v._hash = h
-    end
-    return v._hash
+    return isnothing(v._op) ? hash(v._id, h) : hash(v._op, h)
 end
 
 
@@ -88,6 +81,7 @@ const V = Variable
 ########################################################################
 #                            OPERATIONS                                #
 ########################################################################
+
 
 function Base.getproperty(op::AbstractOp, f::Symbol)
     if f == :typ
@@ -111,6 +105,7 @@ end
 Input(val::Any) = Input(0, val, nothing)
 
 Base.show(io::IO, op::Input) = print(io, "inp %$(op.id)::$(op.typ)")
+Base.hash(op::Input, h::UInt) = hash(op.id, h)
 
 
 ## Constant
@@ -127,6 +122,7 @@ end
 Constant(id::Int, val) = Constant(id, typeof(val), val, nothing)
 Constant(val) = Constant(0, typeof(val), val, nothing)
 Base.show(io::IO, op::Constant) = print(io, "const %$(op.id) = $(op.val)::$(op.typ)")
+Base.hash(op::Constant, h::UInt) = hash(op.val, h)
 
 
 ## Call
@@ -161,17 +157,11 @@ function Base.show(io::IO, op::Call)
     print(io, "%$(op.id) = $(op.fn)($arg_str)::$typ_str $line_str")
 end
 
-
-"""
-Helper function to map a function only to Variable arguments of a Call
-leaving constant values as is
-"""
-function map_vars(fn::Function, args::Union{Vector,Tuple})
-    return map(v -> v isa Variable ? fn(v) : v, args)
+function Base.hash(op::Call, h::UInt)
+    h = hash(op.fn, h)
+    h = hash(op.args, h)
+    return h
 end
-
-
-var_values(vs) = map_vars(v -> v.op.val, vs)
 
 
 """
@@ -205,6 +195,18 @@ function mkcall(fn, args...; val=missing, line=nothing, kwargs=(;), free_kwargs.
     end
     return Call(0, val_, fn, [args...]; line=line)
 end
+
+
+"""
+Helper function to map a function only to Variable arguments of a Call
+leaving constant values as is
+"""
+function map_vars(fn::Function, args::Union{Vector,Tuple})
+    return map(v -> v isa Variable ? fn(v) : v, args)
+end
+
+
+var_values(vs) = map_vars(v -> v.op.val, vs)
 
 
 ########################################################################
