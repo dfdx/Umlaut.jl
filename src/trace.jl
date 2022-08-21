@@ -240,6 +240,8 @@ function getcode(f, argtypes)
     irs = code_ircode_by_signature(no_pass, Tuple{Core.Typeof(f), argtypes...})
     @assert !isempty(irs) "No IR found for $f($argtypes...)"
     @assert length(irs) == 1 "More than one IR found for $f($argtypes...)"
+    @assert irs[1] isa Pair{IRCode, <:Any} "Expected Pair{IRCode,...}, " *
+            "but got $(typeof(irs[1])) instead"
     return irs[1][1]
 end
 
@@ -529,14 +531,6 @@ Examples:
     #   %3 = foo(%2)::Float64
     #   %4 = +(%3, 1)::Float64
     # )
-
-Advanced:
-=========
-
-* fargtypes=nothing - (f, argtypes) tuple, that, when provided, is used to
-  extract IRCode and find method. May not map 1:1 to f(args...) signatures,
-  which is a case in functions with varargs, broadcasting and others.
-
 
 """
 function trace(f, args...; ctx=BaseCtx(), deprecated_kws...)
