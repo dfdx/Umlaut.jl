@@ -443,9 +443,24 @@ function trace!(t::Tracer, v_fargs)
             bi += 1
         elseif cf isa Core.GotoIfNot
             # conditional jump
-            cond_val = (cf.cond isa Argument || cf.cond isa SSAValue ?
-                        t.tape[frame.ir2tape[cf.cond]].val :   # resolve tape var
-                        cf.cond)                               # literal condition (e.g. while true)
+            cond_val = if cf.cond isa Argument || cf.cond isa SSAValue
+                # resolve tape var
+                t.tape[frame.ir2tape[cf.cond]].val
+            elseif cf.cond isa Bool
+                # literal condition (e.g. while true)
+                cf.cond
+            elseif cf.cond == Expr(:boundscheck)
+                # boundscheck expression must be evaluated on some later stage
+                # of interpretation that we don't have access to on this level
+                # so just skipping the check instead
+                true
+            else
+                exc = AssertionError(
+                    "Expected goto condition to be of type Argument, " *
+                    "SSAValue or Bool, but got $(cf.cond). \n\nFull IR: \n\n$(ir)\n"
+                )
+                throw(exc)
+            end
             # if not cond, set i to destination, otherwise step forward
             prev_bi = bi
             bi = !cond_val ? cf.dest : bi + 1
