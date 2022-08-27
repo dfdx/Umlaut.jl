@@ -92,7 +92,7 @@ getid(x::Argument) = x.n
 
 function Base.show(io::IO, frame::Frame)
     s = "Frame(\n"
-    for (sv, v) in sort(frame.ir2tape, by=getid)
+    for (sv, v) in sort(collect(frame.ir2tape), by=p->getid(p[1]))
         s *= "  $sv => $v\n"
     end
     s *= ")"
@@ -327,6 +327,9 @@ function trace_block!(t::Tracer, ir::IRCode, bi::Integer, prev_bi::Integer, spar
             # assignment
             sv = SSAValue(pc)
             frame.ir2tape[sv] = frame.ir2tape[ex]
+        elseif Meta.isexpr(ex, :static_parameter)
+            sv = SSAValue(pc)
+            frame.ir2tape[sv] = sparams[ex.args[1]]
         elseif ex isa Expr && ex.head in [:code_coverage_effect]
             # ignored expressions, just skip it
         elseif ex isa Expr
