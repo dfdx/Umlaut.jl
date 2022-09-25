@@ -100,9 +100,10 @@ mutable struct Input <: AbstractOp
     id::Int
     val::Any
     tape
+    line
 end
 
-Input(val::Any) = Input(0, val, nothing)
+Input(val::Any; line=nothing) = Input(0, val, nothing, line)
 
 Base.show(io::IO, op::Input) = print(io, "inp %$(op.id)::$(op.typ)")
 Base.hash(op::Input, h::UInt) = hash(op.id, h)
@@ -116,11 +117,12 @@ mutable struct Constant <: AbstractOp
     typ::Type
     val
     tape
+    line
 end
 
 
-Constant(id::Int, val) = Constant(id, typeof(val), val, nothing)
-Constant(val) = Constant(0, typeof(val), val, nothing)
+Constant(id::Int, val; line=nothing) = Constant(id, typeof(val), val, nothing, line)
+Constant(val; line=nothing) = Constant(0, typeof(val), val, nothing, line)
 Base.show(io::IO, op::Constant) = print(io, "const %$(op.id) = $(op.val)::$(op.typ)")
 Base.hash(op::Constant, h::UInt) = hash(op.val, h)
 
@@ -142,8 +144,8 @@ mutable struct Call{T} <: AbstractOp
     val::Any
     fn::T
     args::Vector{Any}   # vector of Variables or const values
-    tape
-    line
+    tape                # backref to tape
+    line                # lineinfo or comment
 end
 Call(id, val, fn::T, args; line=nothing) where T = Call{T}(id, val, fn, args, nothing, line)
 
