@@ -301,17 +301,27 @@ end
 is_control_flow(ex) = ex isa GotoNode || ex isa GotoIfNot || ex isa ReturnNode
 
 
+function getlineinfo(ir::IRCode, pc::Integer)
+    if pc <= length(ir.linetable)
+        ir.linetable[ir.stmts.line[pc]]
+    else
+        "new node"
+    end
+end
+
+
 function trace_block!(t::Tracer, ir::IRCode, bi::Integer, prev_bi::Integer, sparams)
     frame = t.stack[end]
     for (pc, ex) in frame.block_exprs[bi]
         ex = rewrite_special_cases(ex)
+        line = getlineinfo(ir, pc)
         if is_control_flow(ex)
             return ex   # exit on control flow statement
         elseif Meta.isexpr(ex, :call)
             vs = resolve_tape_vars(frame, ex.args...)
             vs = [Meta.isexpr(x, :static_parameter) ? sparams[x.args[1]] : x for x in vs]
             vs = unsplat!(t, vs)
-            t.tape.meta[:line] = ir.linetable[ir.stmts.line[pc]]
+            t.tape.meta[:line] = line
             v = trace_call!(t, vs...)
             t.tape.meta[:line] = nothing
             frame.ir2tape[SSAValue(pc)] = v
@@ -322,7 +332,7 @@ function trace_block!(t::Tracer, ir::IRCode, bi::Integer, prev_bi::Integer, spar
             ir2tape[SSAValue(pc)] = ir2tape[ex.values[k]]
         elseif ex isa Core.PiNode
             val = t.tape[frame.ir2tape[ex.val]].val
-            frame.ir2tape[SSAValue(pc)] = push!(t.tape, Constant(val))
+            frame.ir2tape[SSAValue(pc)] = push!(t.tape, Constant(val; line))
         elseif ex isa SSAValue || ex isa Argument
             # assignment
             sv = SSAValue(pc)
@@ -336,7 +346,7 @@ function trace_block!(t::Tracer, ir::IRCode, bi::Integer, prev_bi::Integer, spar
             error("Unexpected expression: $ex\nFull IRCode:\n\n $ir")
         else
             # treat as constant
-            v = push!(t.tape, Constant(promote_const_value(ex)))
+            v = push!(t.tape, Constant(promote_const_value(ex); line))
             frame.ir2tape[SSAValue(pc)] = v
         end
     end
@@ -474,14 +484,16 @@ function trace!(t::Tracer, v_fargs)
         elseif cf isa ReturnNode
             # global STATE = t, cf, ir
             isdefined(cf, :val) || error("Reached unreachable")
-            pc = cf.val
-            if pc isa SSAValue || pc isa Argument
-                val = frame.ir2tape[pc]
-                v = val isa V ? val : push!(t.tape, Constant(promote_const_value(val)))
+            res = cf.val
+            f, args... = var_values(v_fargs)
+            line = "return value from $f$(map(Core.Typeof, args))"
+            if res isa SSAValue || res isa Argument
+                val = frame.ir2tape[res]
+                v = val isa V ? val : push!(t.tape, Constant(promote_const_value(val); line))
                 pop!(t.stack)
                 return v
             else
-                v = push!(t.tape, Constant(promote_const_value(pc)))
+                v = push!(t.tape, Constant(promote_const_value(res); line))
                 pop!(t.stack)
                 return v
             end
