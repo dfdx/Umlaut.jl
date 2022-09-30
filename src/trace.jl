@@ -302,10 +302,12 @@ is_control_flow(ex) = ex isa GotoNode || ex isa GotoIfNot || ex isa ReturnNode
 
 
 function getlineinfo(ir::IRCode, pc::Integer)
-    if pc <= length(ir.linetable)
-        ir.linetable[ir.stmts.line[pc]]
+    if (1 <= pc <= length(ir.stmts.line)) &&
+        (1 <= ir.stmts.line[pc] <= length(ir.linetable))
+        return ir.linetable[ir.stmts.line[pc]]
     else
-        "new node"
+        approx_loc = first(ir.linetable)
+        return "near $(approx_loc.file):$(approx_loc.line)"
     end
 end
 
@@ -331,8 +333,9 @@ function trace_block!(t::Tracer, ir::IRCode, bi::Integer, prev_bi::Integer, spar
             k = indexin(prev_bi, ex.edges)[]
             ir2tape[SSAValue(pc)] = ir2tape[ex.values[k]]
         elseif ex isa Core.PiNode
-            val = t.tape[frame.ir2tape[ex.val]].val
-            frame.ir2tape[SSAValue(pc)] = push!(t.tape, Constant(val; line))
+            # val = t.tape[frame.ir2tape[ex.val]].val
+            # frame.ir2tape[SSAValue(pc)] = push!(t.tape, Constant(val; line))
+            frame.ir2tape[SSAValue(pc)] = frame.ir2tape[ex.val]
         elseif ex isa SSAValue || ex isa Argument
             # assignment
             sv = SSAValue(pc)
