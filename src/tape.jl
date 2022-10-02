@@ -23,10 +23,11 @@ See also: [`bound`](@ref)
 mutable struct Variable
     _id::Union{<:Integer,Nothing}
     _op::Union{AbstractOp,Nothing}
+    _hash::Union{UInt,Nothing}
 end
 
-Variable(id::Integer) = Variable(id, nothing)
-Variable(op::AbstractOp) = Variable(nothing, op)
+Variable(id::Integer) = Variable(id, nothing, nothing)
+Variable(op::AbstractOp) = Variable(nothing, op, nothing)
 
 Base.show(io::IO, v::Variable) = print(io, "%$(v.id)")
 
@@ -70,7 +71,10 @@ function Base.:(==)(v1::Variable, v2::Variable)
 end
 
 function Base.hash(v::Variable, h::UInt)
-    return isnothing(v._op) ? hash(v._id, h) : hash(v._op, h)
+    if isnothing(v._hash)
+        v._hash = isnothing(v._op) ? hash(v._id, h) : hash(v._op, h)
+    end
+    return v._hash
 end
 
 
