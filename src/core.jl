@@ -5,9 +5,10 @@ using CompilerPluginTools
 
 include("utils.jl")
 include("deprecated.jl")
+@nospecialize
 include("tape.jl")
 include("trace.jl")
-include("trace_cf.jl")
-# include("contexts.jl")
+@specialize
+include("optimize.jl")
 include("compile.jl")
 include("pretty.jl")
