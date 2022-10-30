@@ -178,6 +178,7 @@ and call value can be calculated from (bound) variables and constants,
 they are calculated. To prevent this behavior, set val to some neutral value.
 """
 function mkcall(fn, args...; val=missing, line=nothing, kwargs=(;), free_kwargs...)
+    @nospecialize
     if !isempty(free_kwargs)
         @error "Free keyword arguments to mkcall are discontinued, use kwargs=(...;) instead"
     end
@@ -193,8 +194,8 @@ function mkcall(fn, args...; val=missing, line=nothing, kwargs=(;), free_kwargs.
         fargs
     )
     if ismissing(val) && calculable
-        fargs_ = map_vars(v -> v._op.val, fargs)
-        fn_, args_ = fargs_[1], fargs_[2:end]
+        fn_ = fn isa V ? fn.op.val : fn
+        args_ = Any[v isa V ? v.op.val : v for v in args]
         val_ = fn_(args_...)
     else
         val_ = val
