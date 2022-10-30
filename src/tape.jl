@@ -170,37 +170,38 @@ function Base.hash(op::Call, h::UInt)
 end
 
 
-# """
-#     mkcall(fn, args...; val=missing, kwargs=(;))
+"""
+    mkcall(fn, args...; val=missing, kwargs=(;))
 
-# Convenient constructor for Call operation. If val is `missing` (default)
-# and call value can be calculated from (bound) variables and constants,
-# they are calculated. To prevent this behavior, set val to some neutral value.
-# """
-# function mkcall(fn, args...; val=missing, line=nothing, kwargs=(;), free_kwargs...)
-#     if !isempty(free_kwargs)
-#         @error "Free keyword arguments to mkcall are discontinued, use kwargs=(...;) instead"
-#     end
-#     kwargs = NamedTuple(kwargs)
-#     if !isempty(kwargs)
-#         args = (kwargs, fn, args...)
-#         fn = Core.kwfunc(fn)
-#     end
-#     fargs = (fn, args...)
-#     calculable = all(
-#         a -> !isa(a, Variable) ||                      # not variable
-#         (a._op !== nothing && a._op.val !== missing),  # bound variable
-#         fargs
-#     )
-#     if ismissing(val) && calculable
-#         fargs_ = map_vars(v -> v._op.val, fargs)
-#         fn_, args_ = fargs_[1], fargs_[2:end]
-#         val_ = fn_(args_...)
-#     else
-#         val_ = val
-#     end
-#     return Call(0, val_, fn, [args...]; line=line)
-# end
+Convenient constructor for Call operation. If val is `missing` (default)
+and call value can be calculated from (bound) variables and constants,
+they are calculated. To prevent this behavior, set val to some neutral value.
+"""
+function mkcall(fn, args...; val=missing, line=nothing, kwargs=(;), free_kwargs...)
+    @nospecialize
+    if !isempty(free_kwargs)
+        @error "Free keyword arguments to mkcall are discontinued, use kwargs=(...;) instead"
+    end
+    kwargs = NamedTuple(kwargs)
+    if !isempty(kwargs)
+        args = (kwargs, fn, args...)
+        fn = Core.kwfunc(fn)
+    end
+    fargs = (fn, args...)
+    calculable = all(
+        a -> !isa(a, Variable) ||                      # not variable
+        (a._op !== nothing && a._op.val !== missing),  # bound variable
+        fargs
+    )
+    if ismissing(val) && calculable
+        fn_ = fn isa V ? fn.op.val : fn
+        args_ = Any[v isa V ? v.op.val : v for v in args]
+        val_ = fn_(args_...)
+    else
+        val_ = val
+    end
+    return Call(0, val_, fn, [args...]; line=line)
+end
 
 
 """
