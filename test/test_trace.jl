@@ -203,6 +203,16 @@ inc_val(::Val{N}) where N = N + 1
     @test play!(tape, inc_val, Val(42)) == inc_val(Val(2))
 end
 
+static_val(::Val{N}) where {N} = N
+
+@testset "trace: returning :static_parameter" begin
+    val, tape = trace(static_val, Val(2))
+    @test val == static_val(Val(2))
+    # note: static parameter is recorded as constant
+    # so changing value on tape has no effect
+    @test play!(tape, static_val, Val(42)) == 2
+end
+
 
 ###############################################################################
 

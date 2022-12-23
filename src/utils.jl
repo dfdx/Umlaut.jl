@@ -32,7 +32,7 @@ end
 function flatten(xs)
     res = []
     for x in xs
-        push!(res, x...)
+        append!(res, x)
     end
     return res
 end
