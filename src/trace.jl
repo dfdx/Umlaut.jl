@@ -490,16 +490,17 @@ function trace!(t::Tracer, v_fargs)
             res = cf.val
             f, args... = var_values(v_fargs)
             line = "return value from $f$(map(Core.Typeof, args))"
-            if res isa SSAValue || res isa Argument
+            v = if res isa SSAValue || res isa Argument
                 val = frame.ir2tape[res]
-                v = val isa V ? val : push!(t.tape, Constant(promote_const_value(val); line))
-                pop!(t.stack)
-                return v
+                val isa V ? val : push!(t.tape, Constant(promote_const_value(val); line))
+            elseif Meta.isexpr(res, :static_parameter, 1)
+                val = sparams[res.args[1]]
+                push!(t.tape, Constant(promote_const_value(val); line))
             else
-                v = push!(t.tape, Constant(promote_const_value(res); line))
-                pop!(t.stack)
-                return v
+                push!(t.tape, Constant(promote_const_value(res); line))
             end
+            pop!(t.stack)
+            return v
         else
             error("Panic! Don't know how to handle control flow expression $cf")
         end
