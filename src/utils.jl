@@ -4,10 +4,13 @@ User-level version of the `new()` pseudofunction.
 Can be used to construct most Julia types, including structs
 without default constructors, closures, etc.
 """
-@generated function __new__(T, args...)
-    return Expr(:splatnew, :T, :args)
+function __new__(T, args...)
+    @splatnew(T, args)
 end
 
+macro __splatnew__(T, args)
+    esc(Expr(:splatnew, T, args))
+end
 
 """
 Unwrap constant value from its expression container such as
