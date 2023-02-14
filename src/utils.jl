@@ -4,7 +4,7 @@ User-level version of the `new()` pseudofunction.
 Can be used to construct most Julia types, including structs
 without default constructors, closures, etc.
 """
-function __new__(T, args...)
+@inline function __new__(T, args...)
     @splatnew(T, args)
 end
 
