@@ -8,7 +8,7 @@ without default constructors, closures, etc.
     @splatnew(T, args)
 end
 
-macro __splatnew__(T, args)
+macro splatnew(T, args)
     esc(Expr(:splatnew, T, args))
 end
 
