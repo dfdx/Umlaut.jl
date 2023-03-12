@@ -27,7 +27,7 @@ import Umlaut: Tape, V, inputs!, rebind!, mkcall, primitivize!
     c = mkcall(*, 2.0, v1)                # bound var
     @test c.val == 2.0 * tape[v1].val
     c = mkcall(*, 2.0, V(100))            # unbound var
-    @test c.val === missing
+    @test c.val === Umlaut.UncalculatedValue()
     c = mkcall(*, 2.0, V(100); val=10.0)  # manual value
     @test c.val == 10.0
 
