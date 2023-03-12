@@ -486,3 +486,11 @@ end
     @test tape.c.count == 4
     @test count(op -> op isa Call && op.fn == (+), tape) == 4
 end
+
+###############################################################################
+
+@testset "passing missing as argument" begin
+    res, _ = trace(ismissing, missing)
+    @test !ismissing(res)
+    @test res === true
+end

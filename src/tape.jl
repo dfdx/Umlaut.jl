@@ -169,15 +169,23 @@ function Base.hash(op::Call, h::UInt)
     return h
 end
 
+"""
+  UncalculatedValue()
+
+This struct is used to signal that a value on the tape has not been computed.
+The downstream Call operations using at least one value of type `Umlaut.UncalculatedValue`
+will propagate and will also have a result of type `Umlaut.UncalculatedValue`.
+"""
+struct UncalculatedValue end
 
 """
     mkcall(fn, args...; val=missing, kwargs=(;))
 
-Convenient constructor for Call operation. If val is `missing` (default)
+Convenient constructor for Call operation. If val is `UncalculatedValue` (default)
 and call value can be calculated from (bound) variables and constants,
 they are calculated. To prevent this behavior, set val to some neutral value.
 """
-function mkcall(fn, args...; val=missing, line=nothing, kwargs=(;), free_kwargs...)
+function mkcall(fn, args...; val=UncalculatedValue(), line=nothing, kwargs=(;), free_kwargs...)
     @nospecialize
     if !isempty(free_kwargs)
         @error "Free keyword arguments to mkcall are discontinued, use kwargs=(...;) instead"
@@ -190,10 +198,10 @@ function mkcall(fn, args...; val=missing, line=nothing, kwargs=(;), free_kwargs.
     fargs = (fn, args...)
     calculable = all(
         a -> !isa(a, Variable) ||                      # not variable
-        (a._op !== nothing && a._op.val !== missing),  # bound variable
+        (a._op !== nothing && a._op.val !== UncalculatedValue()),  # bound variable
         fargs
     )
-    if ismissing(val) && calculable
+    if val === UncalculatedValue() && calculable
         fn_ = fn isa V ? fn.op.val : fn
         args_ = Any[v isa V ? v.op.val : v for v in args]
         val_ = fn_(args_...)
