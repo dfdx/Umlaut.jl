@@ -175,6 +175,11 @@ end
 mutable struct Point x; y end
 constructor_loss(a) = (p = Point(a, a); p.x + p.y)
 
+struct SplatNewTester
+    x
+    y
+    SplatNewTester(x...) = new(x...)
+end
 
 @testset "trace: constructors" begin
     # isprimitive for constructors
@@ -187,6 +192,10 @@ constructor_loss(a) = (p = Point(a, a); p.x + p.y)
     _, tape = trace(constructor_loss, 4.0)
     @test tape[V(3)].val == Point
     @test tape[V(4)].fn == __new__
+
+    # constructor with splatnew
+    _, tape = trace((x, y) -> SplatNewTester(x, y), 5.0, 4)
+    @test tape[V(10)].fn == __new__
 end
 
 
