@@ -12,6 +12,10 @@ without default constructors, closures, etc.
     @__splatnew__(T, args)
 end
 
+function __splatnew__(T, t)
+    return __new__(T, t...)
+end
+
 """
 Unwrap constant value from its expression container such as
 GlobalRef, QuoteNode, etc. No-op if there's no known container.

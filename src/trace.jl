@@ -241,7 +241,7 @@ function getcode(f, argtypes)
     @assert !isempty(irs) "No IR found for $f($argtypes...)"
     @assert length(irs) == 1 "More than one IR found for $f($argtypes...)"
     @assert irs[1] isa Pair{IRCode, <:Any} "Expected Pair{IRCode,...}, " *
-            "but got $(typeof(irs[1])) instead"
+            "but got $(typeof(irs[1])) instead for f=$f with argtypes=$argtypes"
     return irs[1][1]
 end
 
@@ -261,6 +261,9 @@ function rewrite_special_cases(st::Expr)
     ex = Meta.isexpr(st, :(=)) ? st.args[2] : st
     if Meta.isexpr(ex, :new)
         ex = Expr(:call, __new__, ex.args...)
+    end
+    if Meta.isexpr(ex, :splatnew)
+        ex = Expr(:call, __splatnew__, ex.args...)
     end
     return Meta.isexpr(st, :(=)) ? Expr(:(=), st.args[1], ex) : ex
 end
@@ -363,7 +366,6 @@ function check_variable_length(val, len::Integer, id::Integer)
               "but now has length $(length(val))")
     end
 end
-
 
 """
     code_signature(ctx, v_fargs)
