@@ -237,7 +237,11 @@ Tracer(tape::Tape{C}) where C = Tracer{C}(tape, [])
 
 
 function getcode(f, argtypes)
-    irs = code_ircode_by_signature(no_pass, Tuple{Core.Typeof(f), argtypes...})
+    irs = @static if VERSION < v"1.8"
+        code_ircode_by_signature(no_pass, Tuple{Core.Typeof(f), argtypes...})
+    else
+        Base.code_ircode(f, argtypes; optimize_until="slot2reg")
+    end
     @assert !isempty(irs) "No IR found for $f($argtypes...)"
     @assert length(irs) == 1 "More than one IR found for $f($argtypes...)"
     @assert irs[1] isa Pair{IRCode, <:Any} "Expected Pair{IRCode,...}, " *
