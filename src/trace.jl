@@ -237,7 +237,7 @@ Tracer(tape::Tape{C}) where C = Tracer{C}(tape, [])
 
 
 function getcode(f, argtypes)
-    irs = @static if VERSION < v"1.8"
+    irs = @static if VERSION < v"1.9"
         code_ircode_by_signature(no_pass, Tuple{Core.Typeof(f), argtypes...})
     else
         Base.code_ircode(f, argtypes; optimize_until="slot2reg")
