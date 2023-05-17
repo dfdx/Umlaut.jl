@@ -266,6 +266,9 @@ function rewrite_special_cases(st::Expr)
     if Meta.isexpr(ex, :new)
         ex = Expr(:call, __new__, ex.args...)
     end
+    if Meta.isexpr(ex, :splatnew)
+        ex = Expr(:call, __splatnew__, ex.args...)
+    end
     return Meta.isexpr(st, :(=)) ? Expr(:(=), st.args[1], ex) : ex
 end
 rewrite_special_cases(st) = st
@@ -367,7 +370,6 @@ function check_variable_length(val, len::Integer, id::Integer)
               "but now has length $(length(val))")
     end
 end
-
 
 """
     code_signature(ctx, v_fargs)
