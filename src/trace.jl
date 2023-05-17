@@ -245,7 +245,7 @@ function getcode(f, argtypes)
     @assert !isempty(irs) "No IR found for $f($argtypes...)"
     @assert length(irs) == 1 "More than one IR found for $f($argtypes...)"
     @assert irs[1] isa Pair{IRCode, <:Any} "Expected Pair{IRCode,...}, " *
-            "but got $(typeof(irs[1])) instead"
+            "but got $(typeof(irs[1])) instead for f=$f with argtypes=$argtypes"
     return irs[1][1]
 end
 
