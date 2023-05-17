@@ -12,6 +12,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
+      continue-on-error: ${{ matrix.julia-version == 'nightly' }}
       matrix:
         version:
           - '1.6'
