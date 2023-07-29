@@ -44,6 +44,29 @@ end
 
 ###############################################################################
 
+@eval _alt_getindex(x::Vector, i) = Base.arrayref($(Expr(:boundscheck)), x, i)
+@eval function _boundscheck_foo()
+    v = $(Expr(:boundscheck))
+    return v ? 1 : 0
+end
+
+@testset "trace: :boundscheck" begin
+    @testset "boundscheck as argument" begin
+        x = randn(5)
+        val, tape = trace(_alt_getindex, x, 1)
+        @test val == getindex(x, 1)
+        @test play!(tape, getindex, x, 1) == getindex(x, 1)
+    end
+
+    @testset "boundscheck as rhs statement" begin
+        val, tape = trace(_boundscheck_foo)
+        @test val == _boundscheck_foo()
+        @test play!(tape, _boundscheck_foo) == val
+    end
+end
+
+###############################################################################
+
 
 @testset "trace: bcast" begin
     # bcast

@@ -269,6 +269,14 @@ function rewrite_special_cases(st::Expr)
     if Meta.isexpr(ex, :splatnew)
         ex = Expr(:call, __splatnew__, ex.args...)
     end
+    # replace :($(Expr(:boundscheck))) with just `true`
+    if Meta.isexpr(ex, :boundscheck)
+        ex = true
+    end
+    # same for arguments
+    if ex isa Expr
+        ex.args = [Meta.isexpr(arg, :boundscheck) ? true : arg for arg in ex.args]
+    end
     return Meta.isexpr(st, :(=)) ? Expr(:(=), st.args[1], ex) : ex
 end
 rewrite_special_cases(st) = st
