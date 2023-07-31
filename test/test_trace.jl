@@ -65,6 +65,67 @@ end
     end
 end
 
+
+
+###############################################################################
+
+# Test case courtesy of maleadt. See discourse for details:
+# https://discourse.julialang.org/t/testing-gc-preserve-when-doing-compiler-passes/102241
+
+struct GCCtx end
+
+function isprimitive(::GCCtx, f, args...)
+    typeof(f) === typeof(GC.gc) && return true
+    return isprimitive(BaseCtx(), f, args...)
+end
+
+mutable struct Object
+    finalized::Bool
+    @noinline function Object()
+        finalizer(new(false)) do obj
+            obj.finalized = true
+            return obj
+        end
+    end
+end
+
+function with_preservation()
+    obj = Object()
+    return GC.@preserve obj begin
+        ptr = convert(Ptr{Bool}, Base.pointer_from_objref(obj))
+        GC.gc(true)
+        unsafe_load(ptr)
+    end
+end
+
+function without_preservation()
+    obj = Object()
+    ptr = convert(Ptr{Bool}, Base.pointer_from_objref(obj))
+    GC.gc(true)
+    return unsafe_load(ptr)
+end
+
+@testset "gc_preserve" begin
+    @testset "with preservation" begin
+        @test with_preservation() == false
+        val, tape = trace(with_preservation; ctx=GCCtx())
+        @test val == false
+        @test play!(tape, with_preservation) == false
+        @test compile(tape)(with_preservation) == false
+    end
+
+    # The tape never drops references to `obj`, so it never gets freed, regardless preserve.
+    @testset "without preservation" begin
+        @test without_preservation() == true
+        val, tape = trace(without_preservation; ctx=GCCtx())
+        @test val == false
+        @test play!(tape, without_preservation) == false
+        compiled_tape = Umlaut.compile(tape)
+        @test compiled_tape(without_preservation) == false
+    end
+end
+
+
 ###############################################################################
 
 

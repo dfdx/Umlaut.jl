@@ -260,7 +260,6 @@ macro getcode(ex)
     end
 end
 
-
 function rewrite_special_cases(st::Expr)
     ex = Meta.isexpr(st, :(=)) ? st.args[2] : st
     if Meta.isexpr(ex, :new)
@@ -358,7 +357,9 @@ function trace_block!(t::Tracer, ir::IRCode, bi::Integer, prev_bi::Integer, spar
         elseif Meta.isexpr(ex, :static_parameter)
             sv = SSAValue(pc)
             frame.ir2tape[sv] = sparams[ex.args[1]]
-        elseif ex isa Expr && ex.head in [:code_coverage_effect]
+        elseif ex isa Expr && ex.head in [
+            :code_coverage_effect, :gc_preserve_begin, :gc_preserve_end,
+        ]
             # ignored expressions, just skip it
         elseif ex isa Expr
             error("Unexpected expression: $ex\nFull IRCode:\n\n $ir")
