@@ -260,6 +260,7 @@ macro getcode(ex)
     end
 end
 
+
 function rewrite_special_cases(st::Expr)
     ex = Meta.isexpr(st, :(=)) ? st.args[2] : st
     if Meta.isexpr(ex, :new)
