@@ -129,6 +129,54 @@ end
 ###############################################################################
 
 
+# No static parameters.
+function foreigncall_0(x::Array{Float64})
+    return unsafe_load(ccall(:jl_array_ptr, Ptr{Float64}, (Any, ), x))
+end
+
+# Static parameters in nested types directly in ccall expression. See
+# https://discourse.julialang.org/t/types-in-foreigncall-nodes/101830 for context.
+function foreigncall_1(::Type{Ptr{T}}, x::Array{T}) where {T}
+    return unsafe_load(ccall(:jl_array_ptr, Ptr{T}, (Any, ), x))
+end
+
+# Tuple-style foreigncall name specification.
+function foreigncall_blas_0(n::Int, DA::Float64, DX::Array{Float64}, incx::Int)
+    ccall(
+        (BLAS.@blasfunc(dscal_), BLAS.libblastrampoline),
+        Cvoid,
+        (Ref{BLAS.BlasInt}, Ref{Float64}, Ptr{Float64}, Ref{BLAS.BlasInt}),
+        n, DA, DX, incx,
+    )
+    return DX
+end
+
+# Must be called with T == Float64. Addresses the same limitation as foreigncall_1.
+function foreigncall_blas_1(n::Int, DA::T, DX::Array{T}, incx::Int) where {T}
+    ccall(
+        (BLAS.@blasfunc(dscal_), BLAS.libblastrampoline),
+        Cvoid,
+        (Ref{BLAS.BlasInt}, Ref{T}, Ptr{T}, Ref{BLAS.BlasInt}),
+        n, DA, DX, incx,
+    )
+    return DX
+end
+
+@testset "trace: foreigncall" begin
+    @testset "$f" for (f, args) in [
+        (foreigncall_0, (randn(5), )),
+        (foreigncall_1, (Ptr{Float64}, randn(5))),
+        (foreigncall_blas_0, (5, 3.0, randn(11), 2)),
+        (foreigncall_blas_1, (5, 3.0, randn(11), 2)),
+    ]
+        original_args = deepcopy(args)
+        val, tape = trace(f, args...)
+        @test val == f(deepcopy(original_args)...)
+    end
+end
+
+###############################################################################
+
 @testset "trace: bcast" begin
     # bcast
     A = rand(3)

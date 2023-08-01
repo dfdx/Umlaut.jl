@@ -1,8 +1,8 @@
 Base.Experimental.@compiler_options optimize=0 compile=min infer=no
 
 import Core: CodeInfo, SSAValue, SlotNumber
-import Statistics, LinearAlgebra   # include primitives from these stanard modules
-using CompilerPluginTools
+import Statistics, LinearAlgebra   # include primitives from these standard modules
+using CompilerPluginTools, ExprTools
 
 
 include("utils.jl")

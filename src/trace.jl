@@ -148,7 +148,7 @@ in one of the Julia's built-in modules, e.g. `Base`, `Core`, `Broadcast`, etc.
 """
 function isprimitive(ctx::BaseCtx, f, args...)
     if isempty(ctx.primitives)
-        f in (__new__, Colon(), Base.Generator) && return true
+        f in (__new__, Colon(), Base.Generator, __foreigncall__) && return true
         f isa NamedTuple && return true
         (f isa ComposedFunction || f === (∘)) && return false
         modl = module_of(f, args...)
@@ -281,13 +281,25 @@ function rewrite_special_cases(st::Expr)
 end
 rewrite_special_cases(st) = st
 
-
 function get_static_params(t::Tracer, v_fargs::VecOrTuple)
     fvals = [v isa V ? t.tape[v].val : v for v in v_fargs]
     fn, vals... = fvals
     mi = Base.method_instances(fn, map(Core.Typeof, vals))[1]
-    return mi.sparam_vals
+    mi_dict = Dict(zip(sparam_names(mi), mi.sparam_vals))
+    return mi.sparam_vals, mi_dict
 end
+
+function sparam_names(m::Core.Method)
+    whereparams = ExprTools.where_parameters(m.sig)
+    whereparams === nothing && return []
+    return map(whereparams) do name
+        name isa Symbol && return name
+        Meta.isexpr(name, :(<:)) && return name.args[1]
+        Meta.isexpr(name, :(>:)) && return name.args[1]
+        error("unrecognised type param $name")
+    end
+end
+sparam_names(mi::Core.MethodInstance) = sparam_names(mi.def)
 
 
 """
@@ -327,7 +339,7 @@ function getlineinfo(ir::IRCode, pc::Integer)
 end
 
 
-function trace_block!(t::Tracer, ir::IRCode, bi::Integer, prev_bi::Integer, sparams)
+function trace_block!(t::Tracer, ir::IRCode, bi::Integer, prev_bi::Integer, sparams, sparams_dict)
     frame = t.stack[end]
     for (pc, ex) in frame.block_exprs[bi]
         ex = rewrite_special_cases(ex)
@@ -358,6 +370,20 @@ function trace_block!(t::Tracer, ir::IRCode, bi::Integer, prev_bi::Integer, spar
         elseif Meta.isexpr(ex, :static_parameter)
             sv = SSAValue(pc)
             frame.ir2tape[sv] = sparams[ex.args[1]]
+        elseif Meta.isexpr(ex, :foreigncall)
+            vs = resolve_tape_vars(frame, ex.args...)
+
+            # Extract arguments.
+            name = extract_foriegncall_name(vs[1])
+            RT = Val(interpolate_sparams(vs[2], sparams_dict))
+            AT = (map(x -> Val(interpolate_sparams(x,sparams_dict)), vs[3])..., )
+            nreq = Val(vs[4])
+            calling_convention = Val(vs[5])
+            x = vs[6:end]
+            frame.ir2tape[SSAValue(pc)] = push!(
+                t.tape,
+                mkcall(__foreigncall__, name, RT, AT, nreq, calling_convention, x...),
+            )
         elseif ex isa Expr && ex.head in [
             :code_coverage_effect, :gc_preserve_begin, :gc_preserve_end,
         ]
@@ -373,6 +399,46 @@ function trace_block!(t::Tracer, ir::IRCode, bi::Integer, prev_bi::Integer, spar
     return  # exit on implicit fallthrough
 end
 
+extract_foriegncall_name(x::Symbol) = Val(x)
+function extract_foriegncall_name(x::Expr)
+    # Make sure that we're getting the expression that we're expecting.
+    !Meta.isexpr(x, :call) && error("unexpected expr $x")
+    !isa(x.args[1], GlobalRef) && error("unexpected expr $x")
+    x.args[1].name != :tuple && error("unexpected expr $x")
+    length(x.args) != 3 && error("unexpected expr $x")
+
+    # Parse it into a name that can be passed as a type.
+    v = eval(x)
+    return Val((Symbol(v[1]), Symbol(v[2])))
+end
+function extract_foriegncall_name(v::Tuple)
+    return Val((Symbol(v[1]), Symbol(v[2])))
+end
+
+function interpolate_sparams(@nospecialize(t::Type), sparams::Dict)
+    t isa Core.TypeofBottom && return t
+    while t isa UnionAll
+        t = t.body
+    end
+    t = t::DataType
+    if Base.isvarargtype(t)
+        return Expr(:(...), t.parameters[1])
+    end
+    if Base.has_free_typevars(t)
+        params = map(t.parameters) do @nospecialize(p)
+            if isa(p, TypeVar)
+                return sparams[p.name]
+            elseif isa(p, DataType) && Base.has_free_typevars(p)
+                return interpolate_sparams(p, sparams)
+            else
+                return p
+            end
+        end
+        T = t.name.Typeofwrapper.parameters[1]
+        return T{params...}
+    end
+    return t
+end
 
 function check_variable_length(val, len::Integer, id::Integer)
     if length(val) != len
@@ -489,12 +555,12 @@ function trace!(t::Tracer, v_fargs)
     v_fargs = group_varargs!(t, v_fargs)
     frame = Frame(t.tape, ir, v_fargs...)
     push!(t.stack, frame)
-    sparams = get_static_params(t, v_fargs)
+    sparams, sparams_dict = get_static_params(t, v_fargs)
     bi = 1
     prev_bi = 0
     cf = nothing
     while bi <= length(ir.cfg.blocks)
-        cf = trace_block!(t, ir, bi, prev_bi, sparams)
+        cf = trace_block!(t, ir, bi, prev_bi, sparams, sparams_dict)
         if isnothing(cf)
             # fallthrough to the next block
             prev_bi = bi

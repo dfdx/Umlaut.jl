@@ -17,6 +17,38 @@ function __splatnew__(T, t)
 end
 
 """
+    function __foreigncall__(
+        ::Val{name}, ::Val{RT}, AT::Tuple, ::Val{nreq}, ::Val{calling_convention}, x...
+    ) where {name, RT, nreq, calling_convention}
+
+:foreigncall nodes get translated into calls to this function.
+For example,
+```julia
+Expr(:foreigncall, :foo, Tout, (A, B), nreq, :ccall, args...)
+```
+becomes
+```julia
+__foreigncall__(Val(:foo), Val(Tout), (Val(A), Val(B)), Val(nreq), Val(:ccall), args...)
+```
+Please consult the Julia documentation for more information on how foreigncall nodes work.
+"""
+@generated function __foreigncall__(
+    ::Val{name}, ::Val{RT}, AT::Tuple, ::Val{nreq}, ::Val{calling_convention}, x...
+) where {name, RT, nreq, calling_convention}
+    return Expr(
+        :foreigncall,
+        QuoteNode(name),
+        :($(RT)),
+        Expr(:call, :(Core.svec), map(__get_arg_type, AT.parameters)...),
+        :($nreq),
+        QuoteNode(calling_convention),
+        map(n -> :(x[$n]), 1:length(x))...,
+    )
+end
+
+__get_arg_type(::Type{Val{T}}) where {T} = T
+
+"""
 Unwrap constant value from its expression container such as
 GlobalRef, QuoteNode, etc. No-op if there's no known container.
 """
