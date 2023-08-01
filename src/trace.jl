@@ -371,6 +371,10 @@ function trace_block!(t::Tracer, ir::IRCode, bi::Integer, prev_bi::Integer, spar
             sv = SSAValue(pc)
             frame.ir2tape[sv] = sparams[ex.args[1]]
         elseif Meta.isexpr(ex, :foreigncall)
+            @static if VERSION < v"1.9"
+                throw(error("foreigncall not supported on versions less than 1.9"))
+            end
+
             vs = resolve_tape_vars(frame, ex.args...)
 
             # Extract arguments.

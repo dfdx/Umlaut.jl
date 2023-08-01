@@ -128,7 +128,6 @@ end
 
 ###############################################################################
 
-
 # No static parameters.
 function foreigncall_0(x::Array{Float64})
     return unsafe_load(ccall(:jl_array_ptr, Ptr{Float64}, (Any, ), x))
@@ -162,16 +161,18 @@ function foreigncall_blas_1(n::Int, DA::T, DX::Array{T}, incx::Int) where {T}
     return DX
 end
 
-@testset "trace: foreigncall" begin
-    @testset "$f" for (f, args) in [
-        (foreigncall_0, (randn(5), )),
-        (foreigncall_1, (Ptr{Float64}, randn(5))),
-        (foreigncall_blas_0, (5, 3.0, randn(11), 2)),
-        (foreigncall_blas_1, (5, 3.0, randn(11), 2)),
-    ]
-        original_args = deepcopy(args)
-        val, tape = trace(f, args...)
-        @test val == f(deepcopy(original_args)...)
+@static if VERSION >= v"1.9"
+    @testset "trace: foreigncall" begin
+        @testset "$f" for (f, args) in [
+            (foreigncall_0, (randn(5), )),
+            (foreigncall_1, (Ptr{Float64}, randn(5))),
+            (foreigncall_blas_0, (5, 3.0, randn(11), 2)),
+            (foreigncall_blas_1, (5, 3.0, randn(11), 2)),
+        ]
+            original_args = deepcopy(args)
+            val, tape = trace(f, args...)
+            @test val == f(deepcopy(original_args)...)
+        end
     end
 end
 
