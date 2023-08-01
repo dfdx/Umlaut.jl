@@ -1,5 +1,6 @@
 using Test
 using Umlaut
+using LinearAlgebra
 
 include("test_utils.jl")
 include("test_tape.jl")
