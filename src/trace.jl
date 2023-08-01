@@ -415,6 +415,7 @@ function extract_foriegncall_name(v::Tuple)
     return Val((Symbol(v[1]), Symbol(v[2])))
 end
 
+# adapted from https://github.com/JuliaDebug/JuliaInterpreter.jl/blob/aefaa300746b95b75f99d944a61a07a8cb145ef3/src/optimize.jl#L239
 function interpolate_sparams(@nospecialize(t::Type), sparams::Dict)
     t isa Core.TypeofBottom && return t
     while t isa UnionAll

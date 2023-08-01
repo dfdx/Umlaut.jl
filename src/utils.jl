@@ -30,7 +30,8 @@ becomes
 ```julia
 __foreigncall__(Val(:foo), Val(Tout), (Val(A), Val(B)), Val(nreq), Val(:ccall), args...)
 ```
-Please consult the Julia documentation for more information on how foreigncall nodes work.
+Please consult the Julia documentation for more information on how foreigncall nodes work,
+and consult this package's tests for examples.
 """
 @generated function __foreigncall__(
     ::Val{name}, ::Val{RT}, AT::Tuple, ::Val{nreq}, ::Val{calling_convention}, x...
