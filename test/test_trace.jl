@@ -105,7 +105,7 @@ function without_preservation()
     return unsafe_load(ptr)
 end
 
-@testset "gc_preserve" begin
+@testset "trace: gc_preserve" begin
     @testset "with preservation" begin
         @test with_preservation() == false
         val, tape = trace(with_preservation; ctx=GCCtx())
@@ -174,6 +174,19 @@ end
             @test val == f(deepcopy(original_args)...)
         end
     end
+end
+
+###############################################################################
+
+@eval function foo(x)
+    $(Expr(:loopinfo, Symbol("julia.simd"), nothing))
+    return 5x
+end
+
+@testset "trace: :loopinfo" begin
+    val, tape = trace(foo, 5.0)
+    @test val == foo(5.0)
+    @test play!(tape, foo, 5.0) == val
 end
 
 ###############################################################################
