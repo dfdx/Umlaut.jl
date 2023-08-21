@@ -15,3 +15,13 @@ struct MyTypeWithParams{T} x::T end
     @test module_of(MyType, 1) == @__MODULE__
     @test module_of(MyTypeWithParams{Int}, 1) == @__MODULE__
 end
+
+struct StructPartialInit
+    x::Float64
+    y::Float64
+    StructPartialInit(x::Float64) = new(x)
+end
+
+@testset "__new__" begin
+    @test first(trace(StructPartialInit, 5.0)).x == StructPartialInit(5.0).x
+end
