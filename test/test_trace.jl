@@ -656,3 +656,21 @@ end
     @test !ismissing(res)
     @test res === true
 end
+
+###############################################################################
+
+function enter_leave_tester(x)
+    try
+        x > 0 && throw(error("an error"))
+    catch
+        x += 1
+    end
+    return x
+end
+
+@testset "enter" begin
+    y, tape = trace(enter_leave_tester, -0.5)
+    @test y == enter_leave_tester(-0.5)
+    @test enter_leave_tester(0.5) == 1.5
+    @test_throws ErrorException trace(enter_leave_tester, 0.5)
+end
