@@ -8,11 +8,11 @@ User-level version of the `new()` pseudofunction.
 Can be used to construct most Julia types, including structs
 without default constructors, closures, etc.
 """
-@generated function __new__(::Type{T}, x...) where {T}
-    return Expr(:new, :T, map(n -> :(x[$n]), 1:length(x))...)
-end
+@generated __new__(T, x...) = Expr(:new, :T, map(n -> :(x[$n]), 1:length(x))...)
 
-__splatnew__(T, t) = __new__(T, t...)
+function __splatnew__(T, t)
+    return __new__(T, t...)
+end
 
 """
     function __foreigncall__(
