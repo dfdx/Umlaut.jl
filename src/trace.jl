@@ -393,8 +393,8 @@ function trace_block!(t::Tracer, ir::IRCode, bi::Integer, prev_bi::Integer, spar
                 t.tape,
                 mkcall(__foreigncall__, name, RT, AT, nreq, calling_convention, x...),
             )
-        # elseif Meta.isexpr(ex, :undefcheck)
-        #     @assert haskey(frame.ir2tape, ex.args[2])
+        elseif Meta.isexpr(ex, :undefcheck)
+            @assert haskey(frame.ir2tape, ex.args[2])
         elseif ex isa Expr && ex.head in [
             :code_coverage_effect, :gc_preserve_begin, :gc_preserve_end, :loopinfo,
             :leave, :pop_exception,

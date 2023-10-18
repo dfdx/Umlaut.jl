@@ -692,4 +692,21 @@ end
 
 @testset "undef in PhiNode" begin
     res, tape = trace(conditionally_defined_tester, 5.0)
+    @test res == conditionally_defined_tester(5.0)
+    @test play!(tape, conditionally_defined_tester, 5.0) == res
+end
+
+###############################################################################
+
+function undefcheck_tester(x)
+    if x > 0
+        y = 5.0
+    end
+    return y # the compiler inserts an :undefcheck expression near here.
+end
+
+@testset "undefcheck" begin
+    res, tape = trace(undefcheck_tester, 5.0)
+    @test res == undefcheck_tester(5.0)
+    @test play!(tape, undefcheck_tester, 5.0) == res
 end
