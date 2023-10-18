@@ -325,7 +325,11 @@ function record_or_recurse!(t, vs...)
 end
 
 
-is_control_flow(ex) = ex isa GotoNode || ex isa GotoIfNot || ex isa ReturnNode
+function is_control_flow(ex)
+    return ex isa GotoNode || ex isa GotoIfNot || ex isa ReturnNode ||
+        Meta.isexpr(ex, :enter)
+end
+
 
 
 function getlineinfo(ir::IRCode, pc::Integer)
@@ -337,7 +341,6 @@ function getlineinfo(ir::IRCode, pc::Integer)
         return "near $(approx_loc.file):$(approx_loc.line)"
     end
 end
-
 
 function trace_block!(t::Tracer, ir::IRCode, bi::Integer, prev_bi::Integer, sparams, sparams_dict)
     frame = t.stack[end]
@@ -358,7 +361,9 @@ function trace_block!(t::Tracer, ir::IRCode, bi::Integer, prev_bi::Integer, spar
             # map current pc to the currently active value of Phi node
             ir2tape = t.stack[end].ir2tape
             k = indexin(prev_bi, ex.edges)[]
-            ir2tape[SSAValue(pc)] = ir2tape[ex.values[k]]
+            if isassigned(ex.values, k)
+                ir2tape[SSAValue(pc)] = ir2tape[ex.values[k]]
+            end
         elseif ex isa Core.PiNode
             # val = t.tape[frame.ir2tape[ex.val]].val
             # frame.ir2tape[SSAValue(pc)] = push!(t.tape, Constant(val; line))
@@ -388,8 +393,11 @@ function trace_block!(t::Tracer, ir::IRCode, bi::Integer, prev_bi::Integer, spar
                 t.tape,
                 mkcall(__foreigncall__, name, RT, AT, nreq, calling_convention, x...),
             )
+        elseif Meta.isexpr(ex, :undefcheck)
+            @assert haskey(frame.ir2tape, ex.args[2])
         elseif ex isa Expr && ex.head in [
             :code_coverage_effect, :gc_preserve_begin, :gc_preserve_end, :loopinfo,
+            :leave, :pop_exception,
         ]
             # ignored expressions, just skip it
         elseif ex isa Expr
@@ -599,6 +607,9 @@ function trace!(t::Tracer, v_fargs)
             end
             pop!(t.stack)
             return v
+        elseif Meta.isexpr(cf, :enter)
+            prev_bi = bi
+            bi += 1
         else
             error("Panic! Don't know how to handle control flow expression $cf")
         end

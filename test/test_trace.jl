@@ -656,3 +656,57 @@ end
     @test !ismissing(res)
     @test res === true
 end
+
+###############################################################################
+
+function enter_leave_tester(x)
+    try
+        x > 0 && throw(error("an error"))
+    catch
+        x += 1
+    end
+    return x
+end
+
+@testset "enter" begin
+    y, tape = trace(enter_leave_tester, -0.5)
+    @test y == enter_leave_tester(-0.5)
+    @test enter_leave_tester(0.5) == 1.5
+    @test_throws ErrorException trace(enter_leave_tester, 0.5)
+end
+
+###############################################################################
+
+# Cannot be traced if you don't check if the `values` field of a `PhiNode` is
+# defined or not before accessing.
+function conditionally_defined_tester(x)
+    isneg = x < 0
+    if isneg
+        y = 1.0
+    end
+    if isneg
+        x += y
+    end
+    return x
+end
+
+@testset "undef in PhiNode" begin
+    res, tape = trace(conditionally_defined_tester, 5.0)
+    @test res == conditionally_defined_tester(5.0)
+    @test play!(tape, conditionally_defined_tester, 5.0) == res
+end
+
+###############################################################################
+
+function undefcheck_tester(x)
+    if x > 0
+        y = 5.0
+    end
+    return y # the compiler inserts an :undefcheck expression near here.
+end
+
+@testset "undefcheck" begin
+    res, tape = trace(undefcheck_tester, 5.0)
+    @test res == undefcheck_tester(5.0)
+    @test play!(tape, undefcheck_tester, 5.0) == res
+end
