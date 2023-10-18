@@ -8,11 +8,10 @@ User-level version of the `new()` pseudofunction.
 Can be used to construct most Julia types, including structs
 without default constructors, closures, etc.
 """
-@generated __new__(T, x...) = Expr(:new, :T, map(n -> :(x[$n]), 1:length(x))...)
-
-# Special case. NamedTuple attempts to do some conversion if you don't provide the correct
-# types, which means that it must be special-cased.
-__new__(::Type{<:NamedTuple{names, T}}, x...) where {names, T} = NamedTuple{names, T}(x)
+@generated function __new__(::Type{T}, x...) where {T}
+    Tfs = fieldtypes(T)
+    return Expr(:new, :T, map(n -> :(convert($(Tfs[n]), x[$n])), 1:length(x))...)
+end
 
 __splatnew__(T, t) = __new__(T, t...)
 
