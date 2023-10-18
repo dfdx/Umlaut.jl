@@ -674,3 +674,22 @@ end
     @test enter_leave_tester(0.5) == 1.5
     @test_throws ErrorException trace(enter_leave_tester, 0.5)
 end
+
+###############################################################################
+
+# Cannot be traced if you don't check if the `values` field of a `PhiNode` is
+# defined or not before accessing.
+function conditionally_defined_tester(x)
+    isneg = x < 0
+    if isneg
+        y = 1.0
+    end
+    if isneg
+        x += y
+    end
+    return x
+end
+
+@testset "undef in PhiNode" begin
+    res, tape = trace(conditionally_defined_tester, 5.0)
+end
