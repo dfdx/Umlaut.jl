@@ -24,4 +24,6 @@ end
 
 @testset "__new__" begin
     @test first(trace(StructPartialInit, 5.0)).x == StructPartialInit(5.0).x
+    @test __new__(NamedTuple{(:a, ), Tuple{Bool}}, true) == (a=true, )
+    @test __new__(NamedTuple{(:a, ), Tuple{Bool}}, 1.0) == (a=true, )
 end
