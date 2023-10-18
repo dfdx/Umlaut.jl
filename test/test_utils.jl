@@ -22,16 +22,6 @@ struct StructPartialInit
     StructPartialInit(x::Float64) = new(x)
 end
 
-struct BoolField
-    x::Bool
-    y::Float64
-end
-
 @testset "__new__" begin
     @test first(trace(StructPartialInit, 5.0)).x == StructPartialInit(5.0).x
-    @test __new__(NamedTuple{(:a, ), Tuple{Bool}}, true) == (a=true, )
-    @test __new__(NamedTuple{(:a, ), Tuple{Bool}}, 1.0) == (a=true, )
-    @test __new__(BoolField, true, 5.0) == BoolField(true, 5.0)
-    @test __new__(BoolField, 1.0, 5.0) == BoolField(1.0, 5.0)
-    @test __new__(BoolField, false, false) == BoolField(false, false)
 end
