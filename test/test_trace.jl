@@ -301,8 +301,8 @@ multiarg_fn(x, y, z) = x + y + z
     f = t -> multiarg_fn(t...)
     _, tape = trace(f, (1, 2))
     @test play!(tape, f, (3, 4)) == f((3, 4))
-    @test tape[V(4)].fn == Base.getindex
-    @test tape[V(5)].fn == Base.getindex
+    @test tape[V(4)].fn == Base.getfield
+    @test tape[V(5)].fn == Base.getfield
 
     @test_logs (:warn, "Variable %2 had length 2 during tracing, but now has length 3") play!(tape, f, (5, 6, 7))
 

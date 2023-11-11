@@ -500,7 +500,7 @@ function unsplat!(t::Tracer, v_fargs)
                 push!(actual_v_args, iter.args...)
             else
                 for i in eachindex(iter.val)
-                    x = push!(t.tape, mkcall(getindex, v, i; line="Umlaut.unsplat!"))
+                    x = push!(t.tape, mkcall(getfield, v, i; line="Umlaut.unsplat!"))
                     push!(actual_v_args, x)
                 end
             end
