@@ -481,8 +481,6 @@ In the lowered form, splatting syntax f(xs...) is represented as
 Core._apply_iterate(f, xs). unsplat!() reverses this change and transformes
 v_fargs to a normal form, possibly destructuring xs into separate variables
 on the tape.
-
-See also: [`group_varargs!()`](@ref)
 """
 function unsplat!(t::Tracer, v_fargs)
     f = v_fargs[1] isa V ? t.tape[v_fargs[1]] : v_fargs[1]
