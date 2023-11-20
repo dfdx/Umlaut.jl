@@ -473,6 +473,10 @@ function code_signature(ctx, v_fargs)
     return fargtypes
 end
 
+__to_tuple__(x::Tuple) = x
+__to_tuple__(x::NamedTuple) = Tuple(x)
+__to_tuple__(x::Array) = Tuple(x)
+__to_tuple__(x) = __to_tuple__(collect(x))
 
 """
     unsplat!(t::Tracer, v_fargs)
@@ -497,8 +501,10 @@ function unsplat!(t::Tracer, v_fargs)
             if is_tuple
                 push!(actual_v_args, iter.args...)
             else
-                for i in eachindex(iter.val)
-                    x = push!(t.tape, mkcall(getfield, v, i; line="Umlaut.unsplat!"))
+                tuple_v = push!(t.tape, mkcall(__to_tuple__, v; line="Umlaut.unsplat!"))
+                iter = t.tape[tuple_v].val
+                for i in eachindex(iter)
+                    x = push!(t.tape, mkcall(getfield, tuple_v, i; line="Umlaut.unsplat!"))
                     push!(actual_v_args, x)
                 end
             end
