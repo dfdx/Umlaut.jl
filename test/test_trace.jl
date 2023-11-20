@@ -281,6 +281,16 @@ multiarg_fn(x, y, z) = only(x) + only(y) + only(z)
 
 
 @testset "trace: varargs, splatting" begin
+
+    @testset "__to_tuple__" begin
+        @test Umlaut.__to_tuple__(5.0) == (5.0, )
+        @test Umlaut.__to_tuple__((5.0, 4.0)) == (5.0, 4.0)
+        @test Umlaut.__to_tuple__((a=5.0, b="hi")) == (5.0, "hi")
+        @test Umlaut.__to_tuple__([5.0, 4.0, 3.0]) == (5.0, 4.0, 3.0)
+        @test Umlaut.__to_tuple__(zip([1.0, 2.0, 3.0])) == ((1.0, ), (2.0, ), (3.0, ))
+        @test Umlaut.__to_tuple__(Core.svec(1.0, 2.0)) == (1.0, 2.0)
+    end
+
     # varargs
     _, tape = trace(vararg_fn, 1, 2, 3)
     @test play!(tape, vararg_fn, 4, 5, 6) == vararg_fn(4, 5, 6)
@@ -301,8 +311,8 @@ multiarg_fn(x, y, z) = only(x) + only(y) + only(z)
     f = t -> multiarg_fn(t...)
     _, tape = trace(f, (1, 2))
     @test play!(tape, f, (3, 4)) == f((3, 4))
-    @test tape[V(4)].fn == Base.getfield
     @test tape[V(5)].fn == Base.getfield
+    @test tape[V(6)].fn == Base.getfield
 
     @test_logs (:warn, "Variable %2 had length 2 during tracing, but now has length 3") play!(tape, f, (5, 6, 7))
 
@@ -319,7 +329,10 @@ multiarg_fn(x, y, z) = only(x) + only(y) + only(z)
         ("splat single Int", 1),
         ("splat single Float64", 1.0),
         ("splat Vector{Float64}", [1.0, 2.0]),
+        ("splat Tuple{Float64, Int}", (5.0, 4)),
+        ("splat NamedTuple(Float64, Int)", (a=5.0, b=2)),
         ("splat zip", zip([1.0, 2.0, 3.0])),
+        ("splat Core.SimpleVector", Core.svec(1.0, 2.)),
     ]
         @test test_f(x) === test_f(x)
         v, tape = trace(test_f, x)
