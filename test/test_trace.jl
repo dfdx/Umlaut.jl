@@ -322,7 +322,9 @@ multiarg_fn(x, y, z) = only(x) + only(y) + only(z)
     @test play!(tape, f, 2) == f(2)
     v2 = V(tape, 2)
     v6 = V(tape, 6)
-    @test (tape[V(end)].fn == +) && (tape[V(end)].args == [v2, v2, v6])
+    if VERSION >= v"1.9"
+        @test (tape[V(end)].fn == +) && (tape[V(end)].args == [v2, v2, v6])
+    end
 
     test_f = x -> multiarg_fn(x...)
     @testset "$name" for (name, x) in [
