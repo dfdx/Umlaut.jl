@@ -363,8 +363,12 @@ end
 
     # constructors
     _, tape = trace(constructor_loss, 4.0)
-    @test tape[V(3)].val == Point
-    @test tape[V(4)].fn == __new__
+
+    # Exact code generated is version dependent -- either is fine.
+    @test(
+        (tape[V(3)].val == Point && tape[V(4)].fn == __new__) ||
+        (tape[V(3)].fn == __new__ && tape[V(3)].args[1] == Point)
+    )
 
     # constructor with splatnew
     # This test seems to be quite brittle, and to depend on the precise version of Julia

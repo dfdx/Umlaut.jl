@@ -284,7 +284,7 @@ rewrite_special_cases(st) = st
 function get_static_params(t::Tracer, v_fargs::VecOrTuple)
     fvals = [v isa V ? t.tape[v].val : v for v in v_fargs]
     fn, vals... = fvals
-    mi = Base.method_instances(fn, map(Core.Typeof, vals))[1]
+    mi = Base.method_instances(fn, map(Core.Typeof, vals), Base.get_world_counter())[1]
     mi_dict = Dict(zip(sparam_names(mi), mi.sparam_vals))
     return mi.sparam_vals, mi_dict
 end
@@ -362,7 +362,14 @@ function trace_block!(t::Tracer, ir::IRCode, bi::Integer, prev_bi::Integer, spar
             ir2tape = t.stack[end].ir2tape
             k = indexin(prev_bi, ex.edges)[]
             if isassigned(ex.values, k)
-                ir2tape[SSAValue(pc)] = ir2tape[ex.values[k]]
+                v = ex.values[k]
+                # It is possible that the value associated to a PhiNode is a constant,
+                # raather than a Variable.
+                if v isa Union{Core.SSAValue, Core.Argument}
+                    ir2tape[SSAValue(pc)] = ir2tape[v]
+                else
+                    ir2tape[SSAValue(pc)] = v
+                end
             end
         elseif ex isa Core.PiNode
             # val = t.tape[frame.ir2tape[ex.val]].val
@@ -394,6 +401,8 @@ function trace_block!(t::Tracer, ir::IRCode, bi::Integer, prev_bi::Integer, spar
                 mkcall(__foreigncall__, name, RT, AT, nreq, calling_convention, x...),
             )
         elseif Meta.isexpr(ex, :undefcheck)
+            @assert haskey(frame.ir2tape, ex.args[2])
+        elseif Meta.isexpr(ex, :throw_undef_if_not)
             @assert haskey(frame.ir2tape, ex.args[2])
         elseif ex isa Expr && ex.head in [
             :code_coverage_effect, :gc_preserve_begin, :gc_preserve_end, :loopinfo,
