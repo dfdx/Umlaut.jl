@@ -278,9 +278,7 @@ end
 rewrite_special_cases(st) = st
 
 function get_static_params(t::Tracer, v_fargs::VecOrTuple)
-    fvals = [v isa V ? t.tape[v].val : v for v in v_fargs]
-    fn, vals... = fvals
-    mi = Base.method_instances(fn, map(Core.Typeof, vals), Base.get_world_counter())[1]
+    mi = Base.method_instances(code_signature(t.tape.c, v_fargs)..., Base.get_world_counter())[1]
     mi_dict = Dict(zip(sparam_names(mi), mi.sparam_vals))
     return mi.sparam_vals, mi_dict
 end
@@ -574,10 +572,10 @@ function trace!(t::Tracer, v_fargs)
     # note: we need to extract IR before vararg grouping, which may change
     # v_fargs, thus invalidating method search
     ir = getcode(code_signature(t.tape.c, v_fargs)...)
+    sparams, sparams_dict = get_static_params(t, v_fargs)
     v_fargs = group_varargs!(t, v_fargs)
     frame = Frame(t.tape, ir, v_fargs...)
     push!(t.stack, frame)
-    sparams, sparams_dict = get_static_params(t, v_fargs)
     bi = 1
     prev_bi = 0
     cf = nothing

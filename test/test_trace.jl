@@ -279,6 +279,9 @@ multiarg_fn(x) = only(x)
 multiarg_fn(x, y) = only(x) + only(y)
 multiarg_fn(x, y, z) = only(x) + only(y) + only(z)
 
+function vararg_fn_sparam(x, xs::Vararg{T,N}) where {T,N}
+    T(N)
+end
 
 @testset "trace: varargs, splatting" begin
 
@@ -306,6 +309,11 @@ multiarg_fn(x, y, z) = only(x) + only(y) + only(z)
     vararg_wrapper = xs -> vararg_fn(xs...)
     _, tape = trace(vararg_wrapper, (1, 2, 3))
     @test play!(tape, vararg_wrapper, (4, 5, 6)) == vararg_wrapper((4, 5, 6))
+
+    res, tape = trace(vararg_fn_sparam, 1, 1.0, 1.0)
+    @test res === 2.0
+    @test play!(tape, vararg_fn_sparam, 1, 1.0, 1.0) == vararg_fn_sparam(1, 1.0, 1.0)
+    @test compile(tape)(vararg_fn_sparam, 1, 1.0, 1.0) == vararg_fn_sparam(1, 1.0, 1.0)
 
     # tuple/vararg unpacking
     f = t -> multiarg_fn(t...)
