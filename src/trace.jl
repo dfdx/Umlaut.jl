@@ -17,6 +17,17 @@ const VecOrTuple = Union{Tuple, Vector}
 #                                  Frame                                      #
 ###############################################################################
 
+# see https://github.com/dfdx/Umlaut.jl/issues/58
+function new_exprs(ir::IRCode)
+    stmts = ir.new_nodes.stmts
+    if hasfield(typeof(stmts), :inst)
+        return stmts.inst
+    else
+        return stmts.stmt
+    end
+end
+
+
 """
     block_expressions(ir::IRCode)
 
@@ -25,7 +36,7 @@ Returns Vector{block_info}, where block_info is Vector{ssa_id => expr}
 """
 function block_expressions(ir::IRCode)
     # new statements
-    new_exs = ir.new_nodes.stmts.inst
+    new_exs = new_exprs(ir)
     # where to insert them
     new_positions = [(info.attach_after ? info.pos + 1 : info.pos)
                     for info in ir.new_nodes.info]

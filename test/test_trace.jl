@@ -371,6 +371,8 @@ end
 
     # constructors
     _, tape = trace(constructor_loss, 4.0)
+    @test tape[V(3)].val isa Point
+    @test_broken tape[V(4)].fn == __new__  # test broken in v1.10
 
     # Exact code generated is version dependent -- either is fine.
     @test(
