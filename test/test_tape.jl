@@ -108,8 +108,18 @@ import Umlaut: Tape, V, inputs!, rebind!, mkcall, primitivize!
 
     primitivize!(tape)
 
-    @test length(tape) == 5
-    @test tape[V(3)].fn == *
-    @test tape[V(4)].fn == -
+
+    if VERSION < v"1.11"
+        @test length(tape) == 5
+        @test tape[V(3)].fn == *
+        @test tape[V(4)].fn == -
+    else
+        # in Julia >= 1.11, functions are first recorded as constants
+        # thus we get +2 new nodes
+        @test length(tape) == 7
+        @test tape[V(5)].fn == bound(tape, V(4)) && tape[V(4)].val == *
+        @test tape[V(6)].fn == bound(tape, V(3)) && tape[V(3)].val == -
+    end
+
 
 end
